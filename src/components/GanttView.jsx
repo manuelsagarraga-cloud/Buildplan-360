@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { useStore } from '../store/index.js'
-import { getVisibleTasks, businessDays, formatDate, isOverdue } from '../lib/utils.js'
-import { DEP_TYPE_ABBR, STATUS_LABELS, PRIORITY_LABELS } from '../lib/supabase.js'
+import { getVisibleTasks, businessDays, formatDate, isOverdue, addDays } from '../lib/utils.js'
+import { DEP_TYPE_ABBR, STATUS_LABELS, PRIORITY_LABELS, sb } from '../lib/supabase.js'
 import { GanttSvg } from './GanttSvg.jsx'
 import { toast } from './Toast.jsx'
 
@@ -31,7 +31,7 @@ export function GanttView() {
     filters, setFilters, viewMode, setViewMode,
     collapsed, toggleCollapsed, pinnedTaskIds, togglePinned,
     editMode, openTaskModal, openImportModal,
-    indentTask, outdentTask, linkTasks,
+    indentTask, outdentTask, linkTasks, loadProject,
   } = useStore()
 
   const [hiddenCols, setHiddenCols] = useState(new Set())
@@ -122,6 +122,52 @@ export function GanttView() {
     })
   }
 
+  // ── Edición masiva ───────────────────────────────────────────
+  const [bulkBusy, setBulkBusy] = useState(false)
+
+  // Asignar un responsable (o quitarlo) a TODAS las tareas seleccionadas
+  async function handleBulkAssign(memberId) {
+    const ids = [...selectedIds]
+    if (!ids.length) return
+    setBulkBusy(true)
+    try {
+      const value = memberId === '' ? null : memberId
+      const { error } = await sb.from('tasks').update({ assigned_to: value }).in('id', ids)
+      if (error) { toast('No se pudo asignar: ' + error.message, 'error'); return }
+      const nombre = value ? (members.find(m => m.id === value)?.name || 'responsable') : 'nadie'
+      toast(`${ids.length} tarea(s) asignadas a ${nombre}`)
+      await loadProject(currentProject.id)
+    } catch (e) {
+      toast('Error al asignar en lote', 'error')
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  // Correr N días (positivo = adelante, negativo = atrás) las tareas seleccionadas
+  async function handleBulkShift(days) {
+    const ids = [...selectedIds]
+    if (!ids.length || !days) return
+    setBulkBusy(true)
+    try {
+      const sel = tasks.filter(t => selectedIds.has(t.id))
+      for (const t of sel) {
+        const patch = {}
+        if (t.start_date) patch.start_date = addDays(t.start_date, days)
+        if (t.end_date) patch.end_date = addDays(t.end_date, days)
+        if (Object.keys(patch).length) {
+          await sb.from('tasks').update(patch).eq('id', t.id)
+        }
+      }
+      toast(`${ids.length} tarea(s) corridas ${days > 0 ? '+' : ''}${days} día(s)`)
+      await loadProject(currentProject.id)
+    } catch (e) {
+      toast('Error al mover en lote', 'error')
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
   const filterCls = useStore(s => s.filters)
 
   return (
@@ -191,11 +237,45 @@ export function GanttView() {
         </div>
       </div>
 
-      {/* ── Selection hint ────────────────────────────────────── */}
+      {/* ── Barra de acciones masivas ─────────────────────────── */}
       {selectedIds.size > 0 && (
-        <div style={{ background: 'var(--info-bg)', borderBottom: '1px solid var(--border)', padding: '4px 24px', fontSize: 12, color: 'var(--info)', display: 'flex', alignItems: 'center', gap: 12 }}>
-          {selectedIds.size} tarea(s) seleccionada(s) — usá Sangría / Outdent / Vincular
-          <button className="btn btn-sm btn-ghost" onClick={() => setSelectedIds(new Set())}>✕ Limpiar selección</button>
+        <div style={{ background: 'var(--info-bg)', borderBottom: '1px solid var(--border)', padding: '8px 24px', fontSize: 13, color: 'var(--info)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <strong>{selectedIds.size} seleccionada(s)</strong>
+
+          {editMode && (
+            <>
+              {/* Asignar responsable a todas */}
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>Asignar a:</span>
+                <select
+                  className="filter-select"
+                  disabled={bulkBusy}
+                  defaultValue=""
+                  onChange={e => { if (e.target.value !== '__') { handleBulkAssign(e.target.value); e.target.value = '__' } }}
+                >
+                  <option value="__">— elegir —</option>
+                  <option value="">(Sin responsable)</option>
+                  {members.filter(m => m.active).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+              </span>
+
+              {/* Correr en el tiempo */}
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>Mover:</span>
+                <button className="btn btn-sm" disabled={bulkBusy} onClick={() => handleBulkShift(-7)} title="Correr una semana hacia atrás">−7d</button>
+                <button className="btn btn-sm" disabled={bulkBusy} onClick={() => handleBulkShift(-1)}>−1d</button>
+                <button className="btn btn-sm" disabled={bulkBusy} onClick={() => handleBulkShift(1)}>+1d</button>
+                <button className="btn btn-sm" disabled={bulkBusy} onClick={() => handleBulkShift(7)} title="Correr una semana hacia adelante">+7d</button>
+                <button className="btn btn-sm" disabled={bulkBusy} onClick={() => { const n = parseInt(prompt('¿Cuántos días correr? (negativo = hacia atrás)', '0') || '0', 10); if (n) handleBulkShift(n) }}>N días…</button>
+              </span>
+
+              {bulkBusy && <span style={{ opacity: .7 }}>Aplicando…</span>}
+            </>
+          )}
+
+          {!editMode && <span style={{ opacity: .8 }}>Activá Modo Edición para asignar o mover en lote</span>}
+
+          <button className="btn btn-sm btn-ghost" style={{ marginLeft: 'auto' }} onClick={() => setSelectedIds(new Set())}>✕ Limpiar</button>
         </div>
       )}
 
@@ -211,7 +291,22 @@ export function GanttView() {
 
 // ── Gantt split view ─────────────────────────────────────────
 function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, leftPaneW, startResize, colTpl, leftBodyRef, rightBodyRef, hiddenCols }) {
-  const { members, toggleCollapsed, togglePinned, pinnedTaskIds, editMode, tasks, deps, viewMode, currentProject, openTaskModal } = useStore()
+  const { members, toggleCollapsed, togglePinned, pinnedTaskIds, editMode, tasks, deps, viewMode, currentProject, openTaskModal, loadProject } = useStore()
+  const [saving, setSaving] = useState({}) // { [taskId]: true } mientras guarda
+
+  // Guardar un campo único sin abrir el modal
+  async function quickSave(taskId, field, value) {
+    setSaving(s => ({ ...s, [taskId]: true }))
+    try {
+      const v = value === '' ? null : value
+      await sb.from('tasks').update({ [field]: v }).eq('id', taskId)
+      await loadProject(currentProject.id)
+    } catch (e) {
+      console.error('quickSave error', e)
+    } finally {
+      setSaving(s => { const n = { ...s }; delete n[taskId]; return n })
+    }
+  }
 
   return (
     <div
@@ -266,14 +361,78 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
                   </div>
                   {!hiddenCols.has('dur') && <div className="cell" style={{ fontSize: 10, color: 'var(--text-2)', fontFamily: 'JetBrains Mono, monospace', justifyContent: 'center' }}>{dur}</div>}
                   {!hiddenCols.has('resp') && (
-                    <div className="cell assignee-cell">
-                      {m ? <><span className="avatar" style={{ background: m.color, width: 20, height: 20, fontSize: 9 }}>{m.name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()}</span><span className="assignee-name">{m.name}</span></> : <span style={{ color: 'var(--text-3)', fontSize: 10 }}>—</span>}
+                    <div className="cell assignee-cell" onClick={e => e.stopPropagation()}>
+                      {editMode ? (
+                        <select
+                          className="inline-select"
+                          value={t.assigned_to || ''}
+                          disabled={saving[t.id]}
+                          onChange={e => quickSave(t.id, 'assigned_to', e.target.value)}
+                          title="Cambiar responsable"
+                        >
+                          <option value="">— sin asignar —</option>
+                          {members.filter(x => x.active).map(x => (
+                            <option key={x.id} value={x.id}>{x.name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        m
+                          ? <><span className="avatar" style={{ background: m.color, width: 20, height: 20, fontSize: 9 }}>{m.name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()}</span><span className="assignee-name">{m.name}</span></>
+                          : <span style={{ color: 'var(--text-3)', fontSize: 10 }}>—</span>
+                      )}
                     </div>
                   )}
                   {!hiddenCols.has('start') && <div className="cell"><span className="date" style={{ fontSize: 10 }}>{formatDate(t.start_date)}</span></div>}
                   {!hiddenCols.has('end') && <div className="cell"><span className={`date ${isOverdue(t) ? 'overdue' : ''}`} style={{ fontSize: 10 }}>{formatDate(t.end_date)}</span></div>}
                   {!hiddenCols.has('pred') && <div className="cell" style={{ fontSize: 9, color: 'var(--info)', fontFamily: 'JetBrains Mono, monospace' }} title={preds.join('; ')}>{preds.join(';') || '—'}</div>}
-                  {!hiddenCols.has('pct') && <div className="cell" style={{ justifyContent: 'center' }}><span className="pct" style={{ fontSize: 10 }}>{t.progress || 0}</span></div>}
+                  {!hiddenCols.has('pct') && (
+                    <div className="cell" style={{ justifyContent: 'center' }} onClick={e => e.stopPropagation()}>
+                      {editMode ? (
+                        <input
+                          type="number" min="0" max="100"
+                          className="inline-pct"
+                          value={t.progress || 0}
+                          disabled={saving[t.id]}
+                          onChange={e => {
+                            const v = Math.min(100, Math.max(0, parseInt(e.target.value) || 0))
+                            quickSave(t.id, 'progress', v)
+                          }}
+                          onClick={e => e.target.select()}
+                          title="Cambiar avance %"
+                        />
+                      ) : (
+                        <span className="pct" style={{ fontSize: 10 }}>{t.progress || 0}</span>
+                      )}
+                    </div>
+                  )}
+                  {!hiddenCols.has('nivel') && (
+                    <div className="cell" onClick={e => e.stopPropagation()}>
+                      {editMode ? (
+                        <select className="inline-select" value={t.nivel || ''} disabled={saving[t.id]} onChange={e => quickSave(t.id, 'nivel', e.target.value)}>
+                          <option value="">—</option>
+                          {['Subsuelo 2','Subsuelo 1','Planta Baja','Primer Piso','Segundo Piso','Tercer Piso','Cubierta','Terreno','General'].map(n => <option key={n}>{n}</option>)}
+                        </select>
+                      ) : <span style={{ fontSize: 10, color: 'var(--text-2)' }}>{t.nivel || '—'}</span>}
+                    </div>
+                  )}
+                  {!hiddenCols.has('rubro') && (
+                    <div className="cell" onClick={e => e.stopPropagation()}>
+                      {editMode ? (
+                        <input className="inline-text" value={t.rubro || ''} disabled={saving[t.id]}
+                          onBlur={e => quickSave(t.id, 'rubro', e.target.value)}
+                          onChange={e => {}} placeholder="rubro…" style={{ fontSize: 10 }} />
+                      ) : <span style={{ fontSize: 10, color: 'var(--text-2)' }}>{t.rubro || '—'}</span>}
+                    </div>
+                  )}
+                  {!hiddenCols.has('contratista') && (
+                    <div className="cell" onClick={e => e.stopPropagation()}>
+                      {editMode ? (
+                        <input className="inline-text" value={t.contratista || ''} disabled={saving[t.id]}
+                          onBlur={e => quickSave(t.id, 'contratista', e.target.value)}
+                          onChange={e => {}} placeholder="contratista…" style={{ fontSize: 10 }} />
+                      ) : <span style={{ fontSize: 10, color: 'var(--text-2)' }}>{t.contratista || '—'}</span>}
+                    </div>
+                  )}
                   <div className="cell" style={{ justifyContent: 'center' }}>
                     {editMode && (
                       <span
