@@ -2,6 +2,7 @@ import React from 'react'
 import { useStore } from '../store/index.js'
 import { formatDate, diffDays } from '../lib/utils.js'
 import { PROJECT_STATUS_LABELS } from '../lib/supabase.js'
+import { HomeDashboard } from '../components/HomeDashboard.jsx'
 
 const STATUS_COLORS = {
   planning: ['var(--neutral-bg)', 'var(--neutral)'],
@@ -24,6 +25,7 @@ export function ProjectsPage() {
 
   return (
     <div className="projects-page">
+      <HomeDashboard />
       <div className="projects-page-header">
         <h1 className="projects-page-title">Centro de Proyectos</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
