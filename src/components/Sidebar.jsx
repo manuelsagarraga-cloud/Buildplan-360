@@ -1,8 +1,11 @@
 import React from 'react'
 import { useStore } from '../store/index.js'
+import { useAuth } from '../store/auth.js'
 
 export function Sidebar({ setSearchOpen = () => {} }) {
   const { page, setPage, sidebarOpen, currentProject, editMode } = useStore()
+  const { role, isSuperAdmin } = useAuth()
+  const isAdmin = role === 'admin' || isSuperAdmin
 
   return (
     <nav className={`sidebar ${sidebarOpen ? '' : 'collapsed'}`}>
@@ -65,15 +68,24 @@ export function Sidebar({ setSearchOpen = () => {} }) {
           </button>
         )}
 
-        {editMode && (
+        {/* ── Sección: Empresa (todos) ── */}
+        <div className="sidebar-section" style={{ marginTop: 8 }}>Empresa</div>
+        <button className={`sidebar-item ${page === 'board' ? 'active' : ''}`} onClick={() => setPage('board')}>
+          <span className="sidebar-item-icon">📊</span>Tablero global
+        </button>
+        <button className={`sidebar-item ${page === 'holidays' ? 'active' : ''}`} onClick={() => setPage('holidays')}>
+          <span className="sidebar-item-icon">📅</span>Feriados
+        </button>
+
+        {/* ── Sección: Administración (solo admins) ── */}
+        {isAdmin && (
           <>
             <div className="sidebar-section" style={{ marginTop: 8 }}>Administración</div>
-            <button
-              className={`sidebar-item ${page === 'resources' ? 'active' : ''}`}
-              onClick={() => setPage('resources')}
-            >
-              <span className="sidebar-item-icon">👥</span>
-              Centro de Recursos
+            <button className={`sidebar-item ${page === 'resources' ? 'active' : ''}`} onClick={() => setPage('resources')}>
+              <span className="sidebar-item-icon">👥</span>Centro de Recursos
+            </button>
+            <button className={`sidebar-item ${page === 'admin' ? 'active' : ''}`} onClick={() => setPage('admin')}>
+              <span className="sidebar-item-icon">⚙️</span>Panel de admin
             </button>
           </>
         )}
