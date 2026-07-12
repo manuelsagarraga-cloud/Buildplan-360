@@ -18,6 +18,7 @@ import { TrashPage } from './pages/TrashPage.jsx'
 import { BoardPage } from './pages/BoardPage.jsx'
 import { HolidaysPage } from './pages/HolidaysPage.jsx'
 import { AdminPage } from './pages/AdminPage.jsx'
+import { OfflineBanner } from './components/OfflineBanner.jsx'
 
 export default function App() {
   const { initAuth, authReady, session, currentMember, role, canEdit, isSuperAdmin, signOut } = useAuth()
@@ -131,6 +132,7 @@ export default function App() {
       <ImportModal />
       <ResourceModal />
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <OfflineBanner />
       <ToastContainer />
     </div>
   )

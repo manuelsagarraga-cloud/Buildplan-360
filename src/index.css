@@ -511,3 +511,14 @@ textarea.form-control{resize:vertical;min-height:68px;line-height:1.5}
   background: var(--surface); color: var(--text-1);
 }
 .inline-text:focus { outline: none; border-color: var(--brand); }
+
+/* ── Drag de barras del Gantt ── */
+#ganttSvg .bar-clickable { cursor: pointer; }
+#ganttSvg.drag-mode .bar-clickable { cursor: grab; }
+#ganttSvg.drag-mode .bar-clickable:active { cursor: grabbing; }
+
+/* ── Animación del banner offline ── */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
