@@ -1,7 +1,7 @@
 import React from 'react'
 import { useStore } from '../store/index.js'
 
-export function Sidebar() {
+export function Sidebar({ setSearchOpen = () => {} }) {
   const { page, setPage, sidebarOpen, currentProject, editMode } = useStore()
 
   return (
@@ -25,6 +25,16 @@ export function Sidebar() {
           Centro de Proyectos
         </button>
 
+        <button
+          className="sidebar-item"
+          onClick={() => setSearchOpen(o => !o)}
+          title="Ctrl+K"
+        >
+          <span className="sidebar-item-icon">🔍</span>
+          Búsqueda
+          <kbd style={{ marginLeft: 'auto', fontSize: 9, padding: '1px 4px', background: 'rgba(255,255,255,.1)', borderRadius: 3, color: 'rgba(255,255,255,.5)' }}>Ctrl+K</kbd>
+        </button>
+
         {currentProject && (
           <button
             className={`sidebar-item ${page === 'gantt' ? 'active' : ''}`}
@@ -34,6 +44,16 @@ export function Sidebar() {
             {currentProject.name.length > 22
               ? currentProject.name.slice(0, 22) + '…'
               : currentProject.name}
+          </button>
+        )}
+
+        {currentProject && (
+          <button
+            className={`sidebar-item ${page === 'log' ? 'active' : ''}`}
+            onClick={() => setPage('log')}
+          >
+            <span className="sidebar-item-icon">📒</span>
+            Libro de obra
           </button>
         )}
 
