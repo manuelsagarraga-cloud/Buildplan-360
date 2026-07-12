@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useStore } from './store/index.js'
 import { useAuth } from './store/auth.js'
 import { LoginScreen } from './components/LoginScreen.jsx'
@@ -12,6 +12,8 @@ import { ResourceModal } from './components/ResourceModal.jsx'
 import { ToastContainer } from './components/Toast.jsx'
 import { ProjectsPage } from './pages/ProjectsPage.jsx'
 import { ResourcesPage } from './pages/ResourcesPage.jsx'
+import { GlobalSearch } from './components/GlobalSearch.jsx'
+import { LogPage } from './pages/LogPage.jsx'
 
 export default function App() {
   const { initAuth, authReady, session, currentMember, role, canEdit, isSuperAdmin, signOut } = useAuth()
@@ -20,6 +22,14 @@ export default function App() {
     sidebarOpen, toggleSidebar,
     editMode, setEditMode,
   } = useStore()
+  const [searchOpen, setSearchOpen] = useState(false)
+
+  // Ctrl+K abre la búsqueda
+  useEffect(() => {
+    const h = e => { if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); setSearchOpen(o => !o) } }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [])
 
   // 1) Arrancar la autenticación (sesión guardada + suscripción a cambios)
   useEffect(() => { initAuth() }, [])
@@ -84,7 +94,7 @@ export default function App() {
 
       {/* ── Body ─────────────────────────────────────────────── */}
       <div className="app-body">
-        <Sidebar />
+        <Sidebar setSearchOpen={setSearchOpen} />
 
         <main className="main-content">
           {connected === false && (
@@ -103,6 +113,7 @@ export default function App() {
           )}
 
           {page === 'resources' && <ResourcesPage />}
+          {page === 'log' && <LogPage />}
         </main>
       </div>
 
@@ -111,6 +122,7 @@ export default function App() {
       <ProjectModal />
       <ImportModal />
       <ResourceModal />
+      <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
       <ToastContainer />
     </div>
   )
