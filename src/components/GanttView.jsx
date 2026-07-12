@@ -4,6 +4,7 @@ import { getVisibleTasks, businessDays, formatDate, isOverdue, addDays } from '.
 import { DEP_TYPE_ABBR, STATUS_LABELS, PRIORITY_LABELS, sb } from '../lib/supabase.js'
 import { GanttSvg } from './GanttSvg.jsx'
 import { toast } from './Toast.jsx'
+import { ProjectSummary } from './ProjectSummary.jsx'
 
 const COL_DEFS = [
   { key: '#',           label: '#',           w: 26,  toggle: false },
@@ -233,9 +234,9 @@ export function GanttView() {
             <option value="year">Año</option>
           </select>
           <div className="tabs">
-            {['gantt','list','kanban'].map(v => (
+            {['gantt','list','kanban','resumen'].map(v => (
               <button key={v} className={`tab ${activeTab === v ? 'active' : ''}`} onClick={() => setActiveTab(v)}>
-                {v === 'gantt' ? 'Gantt' : v === 'list' ? 'Lista' : 'Tablero'}
+                {v === 'gantt' ? 'Gantt' : v === 'list' ? 'Lista' : v === 'kanban' ? 'Tablero' : '📋 Resumen'}
               </button>
             ))}
           </div>
@@ -289,6 +290,7 @@ export function GanttView() {
         {activeTab === 'gantt' && <GanttSplitView visibleTasks={visibleTasks} predMap={predMap} selectedIds={selectedIds} toggleSelect={toggleSelect} leftPaneW={leftPaneW} startResize={startResize} colTpl={colTpl} leftBodyRef={leftBodyRef} rightBodyRef={rightBodyRef} hiddenCols={hiddenCols} />}
         {activeTab === 'list' && <ListView tasks={tasks.filter(t => (!filters.status || t.status === filters.status) && (!filters.assignee || t.assigned_to === filters.assignee))} />}
         {activeTab === 'kanban' && <KanbanView tasks={tasks.filter(t => !filters.assignee || t.assigned_to === filters.assignee)} />}
+        {activeTab === 'resumen' && <ProjectSummary />}
       </div>
     </div>
   )
