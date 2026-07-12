@@ -230,7 +230,7 @@ textarea.form-control{resize:vertical;min-height:68px;line-height:1.5}
 /* ─── Gantt split ────────────────────────────────────────────── */
 .gantt-wrap{flex:1;overflow:hidden;display:flex;flex-direction:column}
 .gantt-split{
-  display:grid;grid-template-columns:var(--left-pane-w,640px) 1fr;
+  display:grid;grid-template-columns:var(--left-pane-w,640px) 8px 1fr;
   flex:1;overflow:hidden;
 }
 .left-pane{display:flex;flex-direction:column;border-right:2px solid var(--border-strong);overflow:hidden;position:relative}
@@ -280,9 +280,14 @@ textarea.form-control{resize:vertical;min-height:68px;line-height:1.5}
 .pct{font-size:11px;font-weight:600;color:var(--text-2)}
 .assignee-cell{gap:6px}
 .assignee-name{font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.resize-handle{position:absolute;right:-4px;top:0;bottom:0;width:8px;cursor:col-resize;z-index:10}
-.resize-handle::after{content:'';position:absolute;left:3px;top:50%;transform:translateY(-50%);width:2px;height:32px;background:var(--border-strong);border-radius:1px}
-.resize-handle:hover::after{background:var(--brand)}
+.resize-handle{
+  width:8px;cursor:col-resize;z-index:10;
+  background:transparent;
+  display:flex;align-items:center;justify-content:center;
+  position:relative;
+}
+.resize-handle::after{content:'';position:absolute;width:2px;height:32px;background:var(--border-strong);border-radius:1px}
+.resize-handle:hover::after,.resize-handle:active::after{background:var(--brand)}
 /* SVG Gantt */
 .bar-bg{fill:var(--brand-bg);stroke:var(--brand);stroke-width:1}
 .bar-progress{fill:var(--info);stroke:none}

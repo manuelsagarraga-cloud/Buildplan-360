@@ -14,6 +14,7 @@ import { ProjectsPage } from './pages/ProjectsPage.jsx'
 import { ResourcesPage } from './pages/ResourcesPage.jsx'
 import { GlobalSearch } from './components/GlobalSearch.jsx'
 import { LogPage } from './pages/LogPage.jsx'
+import { TrashPage } from './pages/TrashPage.jsx'
 
 export default function App() {
   const { initAuth, authReady, session, currentMember, role, canEdit, isSuperAdmin, signOut } = useAuth()
@@ -114,6 +115,7 @@ export default function App() {
 
           {page === 'resources' && <ResourcesPage />}
           {page === 'log' && <LogPage />}
+          {page === 'trash' && <TrashPage />}
         </main>
       </div>
 
