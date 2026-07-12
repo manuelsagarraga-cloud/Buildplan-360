@@ -481,9 +481,18 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
               deps={deps}
               viewMode={viewMode}
               currentProject={currentProject}
+              editMode={editMode}
               onTaskClick={id => {
                 const t = tasks.find(x => x.id === id)
                 if (t && editMode) openTaskModal(t)
+              }}
+              onTaskDrag={async (taskId, newStart, newEnd) => {
+                try {
+                  await sb.from('tasks').update({ start_date: newStart, end_date: newEnd }).eq('id', taskId)
+                  await loadProject(currentProject.id)
+                } catch (e) {
+                  console.error('Error al mover tarea:', e)
+                }
               }}
             />
           </div>

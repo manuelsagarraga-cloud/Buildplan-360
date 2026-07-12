@@ -16,9 +16,10 @@ function depClass(type) {
   return { finish_to_start:'dep-fs',start_to_start:'dep-ss',finish_to_finish:'dep-ff',start_to_finish:'dep-sf' }[type] || 'dep-fs'
 }
 
-export function GanttSvg({ tasks, deps, viewMode, currentProject, onTaskClick }) {
+export function GanttSvg({ tasks, deps, viewMode, currentProject, onTaskClick, onTaskDrag, editMode }) {
   const bodyRef = useRef(null)
   const headerRef = useRef(null)
+  const dragRef = useRef(null) // { taskId, startX, startDate, endDate, pxPerDay }
 
   if (!tasks.length) return <div className="empty-state">Sin tareas para mostrar</div>
 
@@ -265,8 +266,49 @@ export function GanttSvg({ tasks, deps, viewMode, currentProject, onTaskClick })
           style={{ display: 'block' }}
           dangerouslySetInnerHTML={{ __html: arrowMarkers + svgParts.join('') }}
           onClick={e => {
+            // Solo disparar click si NO fue un drag real
+            if (dragRef.current?.wasDrag) { dragRef.current = null; return }
             const el = e.target.closest('.bar-clickable')
             if (el) onTaskClick(el.dataset.taskId)
+          }}
+          onMouseDown={e => {
+            if (!editMode || !onTaskDrag) return
+            const el = e.target.closest('.bar-clickable')
+            if (!el) return
+            const taskId = el.dataset.taskId
+            const task = tasks.find(t => t.id === taskId)
+            if (!task || task._isSummary) return
+            e.preventDefault()
+            const px = VIEW_PX_PER_DAY[viewMode] || 20
+            dragRef.current = { taskId, startX: e.clientX, startDate: task.start_date, endDate: task.end_date, pxPerDay: px, wasDrag: false }
+
+            // Sombra visual durante el drag
+            const barEl = el.querySelector('rect.bar-bg') || el.querySelector('rect.bar-summary')
+            const originalOpacity = barEl?.style.opacity || '1'
+
+            const onMove = ev => {
+              const delta = ev.clientX - dragRef.current.startX
+              if (Math.abs(delta) > 5) {
+                dragRef.current.wasDrag = true
+                if (barEl) barEl.style.opacity = '0.6'
+              }
+            }
+
+            const onUp = ev => {
+              document.removeEventListener('mousemove', onMove)
+              document.removeEventListener('mouseup', onUp)
+              if (barEl) barEl.style.opacity = originalOpacity
+              if (!dragRef.current?.wasDrag) return
+              const deltaPx = ev.clientX - dragRef.current.startX
+              const deltaDays = Math.round(deltaPx / dragRef.current.pxPerDay)
+              if (deltaDays === 0) { dragRef.current = null; return }
+              const newStart = addDays(parseDate(dragRef.current.startDate), deltaDays).toISOString().split('T')[0]
+              const newEnd   = addDays(parseDate(dragRef.current.endDate),   deltaDays).toISOString().split('T')[0]
+              onTaskDrag(dragRef.current.taskId, newStart, newEnd)
+            }
+
+            document.addEventListener('mousemove', onMove)
+            document.addEventListener('mouseup', onUp)
           }}
         />
       </div>
