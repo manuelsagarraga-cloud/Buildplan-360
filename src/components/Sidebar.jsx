@@ -26,6 +26,14 @@ export function Sidebar({ setSearchOpen = () => {} }) {
         </button>
 
         <button
+          className={`sidebar-item ${page === 'trash' ? 'active' : ''}`}
+          onClick={() => setPage('trash')}
+        >
+          <span className="sidebar-item-icon">🗑</span>
+          Papelera
+        </button>
+
+        <button
           className="sidebar-item"
           onClick={() => setSearchOpen(o => !o)}
           title="Ctrl+K"

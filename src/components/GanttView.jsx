@@ -44,6 +44,7 @@ export function GanttView() {
   const [colMenuOpen, setColMenuOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [leftPaneW, setLeftPaneW] = useState(640)
+  const [ganttHidden, setGanttHidden] = useState(false)
   const leftBodyRef = useRef(null)
   const rightBodyRef = useRef(null)
   const headerRef = useRef(null)
@@ -217,6 +218,13 @@ export function GanttView() {
         <div className="toolbar-right">
           <div className="col-toggle">
             <button className="btn" onClick={() => setColMenuOpen(v => !v)}>☰ Columnas</button>
+            <button
+              className={`btn ${ganttHidden ? 'btn-active' : ''}`}
+              onClick={() => setGanttHidden(v => !v)}
+              title={ganttHidden ? 'Mostrar diagrama Gantt' : 'Ocultar diagrama Gantt'}
+            >
+              {ganttHidden ? '▶ Mostrar Gantt' : '⊟ Solo tareas'}
+            </button>
             <div className={`col-menu ${colMenuOpen ? 'open' : ''}`}>
               {COL_DEFS.filter(c => c.toggle).map(c => (
                 <label key={c.key}>
@@ -287,7 +295,7 @@ export function GanttView() {
 
       {/* ── Main view area ────────────────────────────────────── */}
       <div style={{ flex: 1, overflow: 'hidden' }}>
-        {activeTab === 'gantt' && <GanttSplitView visibleTasks={visibleTasks} predMap={predMap} selectedIds={selectedIds} toggleSelect={toggleSelect} leftPaneW={leftPaneW} startResize={startResize} colTpl={colTpl} leftBodyRef={leftBodyRef} rightBodyRef={rightBodyRef} hiddenCols={hiddenCols} />}
+        {activeTab === 'gantt' && <GanttSplitView visibleTasks={visibleTasks} predMap={predMap} selectedIds={selectedIds} toggleSelect={toggleSelect} leftPaneW={leftPaneW} startResize={startResize} colTpl={colTpl} leftBodyRef={leftBodyRef} rightBodyRef={rightBodyRef} hiddenCols={hiddenCols} ganttHidden={ganttHidden} />}
         {activeTab === 'list' && <ListView tasks={tasks.filter(t => (!filters.status || t.status === filters.status) && (!filters.assignee || t.assigned_to === filters.assignee))} />}
         {activeTab === 'kanban' && <KanbanView tasks={tasks.filter(t => !filters.assignee || t.assigned_to === filters.assignee)} />}
         {activeTab === 'resumen' && <ProjectSummary />}
@@ -297,7 +305,7 @@ export function GanttView() {
 }
 
 // ── Gantt split view ─────────────────────────────────────────
-function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, leftPaneW, startResize, colTpl, leftBodyRef, rightBodyRef, hiddenCols }) {
+function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, leftPaneW, startResize, colTpl, leftBodyRef, rightBodyRef, hiddenCols, ganttHidden }) {
   const { members, toggleCollapsed, togglePinned, pinnedTaskIds, editMode, tasks, deps, viewMode, currentProject, openTaskModal, loadProject } = useStore()
   const [saving, setSaving] = useState({}) // { [taskId]: true } mientras guarda
 
@@ -318,7 +326,12 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
   return (
     <div
       className="gantt-split"
-      style={{ '--left-pane-w': leftPaneW + 'px', '--col-tpl': colTpl, height: '100%' }}
+      style={{
+        '--left-pane-w': ganttHidden ? '100%' : leftPaneW + 'px',
+        '--col-tpl': colTpl,
+        height: '100%',
+        gridTemplateColumns: ganttHidden ? '1fr' : `${leftPaneW}px 8px 1fr`,
+      }}
     >
       {/* Left pane */}
       <div className="left-pane">
@@ -452,25 +465,30 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
             })
           }
         </div>
-        <div className="resize-handle" onMouseDown={startResize} />
+        {/* ❌ resize-handle removido de acá — estaba cortado por overflow:hidden */}
       </div>
 
+      {/* ── Handle de resize entre paneles ─────────────────────── */}
+      {!ganttHidden && <div className="resize-handle" onMouseDown={startResize} />}
+
       {/* Right pane */}
-      <div className="right-pane">
-        <div id="ganttHeaderWrap" className="right-header-wrap" style={{ overflowX: 'hidden' }} />
-        <div className="right-body" ref={rightBodyRef} id="ganttRightBody">
-          <GanttSvg
-            tasks={visibleTasks}
-            deps={deps}
-            viewMode={viewMode}
-            currentProject={currentProject}
-            onTaskClick={id => {
-              const t = tasks.find(x => x.id === id)
-              if (t && editMode) openTaskModal(t)
-            }}
-          />
+      {!ganttHidden && (
+        <div className="right-pane">
+          <div id="ganttHeaderWrap" className="right-header-wrap" style={{ overflowX: 'hidden' }} />
+          <div className="right-body" ref={rightBodyRef} id="ganttRightBody">
+            <GanttSvg
+              tasks={visibleTasks}
+              deps={deps}
+              viewMode={viewMode}
+              currentProject={currentProject}
+              onTaskClick={id => {
+                const t = tasks.find(x => x.id === id)
+                if (t && editMode) openTaskModal(t)
+              }}
+            />
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

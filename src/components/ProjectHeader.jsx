@@ -2,6 +2,7 @@ import React from 'react'
 import { useStore } from '../store/index.js'
 import { formatDate, diffDays } from '../lib/utils.js'
 import { PROJECT_STATUS_LABELS } from '../lib/supabase.js'
+import { ExportPDF } from './ExportPDF.jsx'
 
 const STATUS_COLORS = {
   planning: ['var(--neutral-bg)', 'var(--neutral)'],
@@ -36,9 +37,12 @@ export function ProjectHeader() {
           </span>
         </div>
         {editMode && (
-          <button className="btn" style={{ padding: '4px 10px', fontSize: 11 }} onClick={openProjectModal}>
-            ✏️ Editar proyecto
-          </button>
+          <>
+            <ExportPDF />
+            <button className="btn" style={{ padding: '4px 10px', fontSize: 11 }} onClick={openProjectModal}>
+              ✏️ Editar proyecto
+            </button>
+          </>
         )}
       </div>
       <div className="project-meta">
