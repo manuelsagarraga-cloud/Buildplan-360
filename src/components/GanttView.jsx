@@ -6,15 +6,18 @@ import { GanttSvg } from './GanttSvg.jsx'
 import { toast } from './Toast.jsx'
 
 const COL_DEFS = [
-  { key: '#', label: '#', w: 26, toggle: false },
-  { key: 'name', label: 'Tarea', w: null, toggle: false },
-  { key: 'dur', label: 'Dur', w: 46, toggle: true },
-  { key: 'resp', label: 'Responsable', w: 90, toggle: true },
-  { key: 'start', label: 'Inicio', w: 64, toggle: true },
-  { key: 'end', label: 'Fin', w: 64, toggle: true },
-  { key: 'pred', label: 'Pred', w: 72, toggle: true },
-  { key: 'pct', label: '%', w: 26, toggle: true },
-  { key: 'pin', label: '📌', w: 26, toggle: false },
+  { key: '#',           label: '#',           w: 26,  toggle: false },
+  { key: 'name',        label: 'Tarea',        w: null, toggle: false },
+  { key: 'dur',         label: 'Dur',          w: 46,  toggle: true },
+  { key: 'resp',        label: 'Responsable',  w: 110, toggle: true },
+  { key: 'start',       label: 'Inicio',       w: 64,  toggle: true },
+  { key: 'end',         label: 'Fin',          w: 64,  toggle: true },
+  { key: 'pred',        label: 'Pred',         w: 72,  toggle: true },
+  { key: 'pct',         label: '%',            w: 36,  toggle: true },
+  { key: 'nivel',       label: 'Nivel',        w: 110, toggle: true, hidden: true },
+  { key: 'rubro',       label: 'Rubro',        w: 100, toggle: true, hidden: true },
+  { key: 'contratista', label: 'Contratista',  w: 100, toggle: true, hidden: true },
+  { key: 'pin',         label: '📌',           w: 26,  toggle: false },
 ]
 
 function buildColTemplate(hidden) {
@@ -34,7 +37,9 @@ export function GanttView() {
     indentTask, outdentTask, linkTasks, loadProject,
   } = useStore()
 
-  const [hiddenCols, setHiddenCols] = useState(new Set())
+  const [hiddenCols, setHiddenCols] = useState(
+    new Set(COL_DEFS.filter(c => c.hidden).map(c => c.key))
+  )
   const [colMenuOpen, setColMenuOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [leftPaneW, setLeftPaneW] = useState(640)
@@ -324,6 +329,9 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
           {!hiddenCols.has('end') && <div>Fin</div>}
           {!hiddenCols.has('pred') && <div>Pred.</div>}
           {!hiddenCols.has('pct') && <div>%</div>}
+          {!hiddenCols.has('nivel') && <div>Nivel</div>}
+          {!hiddenCols.has('rubro') && <div>Rubro</div>}
+          {!hiddenCols.has('contratista') && <div>Contratista</div>}
           <div>📌</div>
         </div>
         <div className="left-body" ref={leftBodyRef}>
@@ -417,20 +425,16 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
                   )}
                   {!hiddenCols.has('rubro') && (
                     <div className="cell" onClick={e => e.stopPropagation()}>
-                      {editMode ? (
-                        <input className="inline-text" value={t.rubro || ''} disabled={saving[t.id]}
-                          onBlur={e => quickSave(t.id, 'rubro', e.target.value)}
-                          onChange={e => {}} placeholder="rubro…" style={{ fontSize: 10 }} />
-                      ) : <span style={{ fontSize: 10, color: 'var(--text-2)' }}>{t.rubro || '—'}</span>}
+                      {editMode
+                        ? <InlineText value={t.rubro || ''} onSave={v => quickSave(t.id, 'rubro', v)} disabled={saving[t.id]} />
+                        : <span style={{ fontSize: 10, color: 'var(--text-2)' }}>{t.rubro || '—'}</span>}
                     </div>
                   )}
                   {!hiddenCols.has('contratista') && (
                     <div className="cell" onClick={e => e.stopPropagation()}>
-                      {editMode ? (
-                        <input className="inline-text" value={t.contratista || ''} disabled={saving[t.id]}
-                          onBlur={e => quickSave(t.id, 'contratista', e.target.value)}
-                          onChange={e => {}} placeholder="contratista…" style={{ fontSize: 10 }} />
-                      ) : <span style={{ fontSize: 10, color: 'var(--text-2)' }}>{t.contratista || '—'}</span>}
+                      {editMode
+                        ? <InlineText value={t.contratista || ''} onSave={v => quickSave(t.id, 'contratista', v)} disabled={saving[t.id]} />
+                        : <span style={{ fontSize: 10, color: 'var(--text-2)' }}>{t.contratista || '—'}</span>}
                     </div>
                   )}
                   <div className="cell" style={{ justifyContent: 'center' }}>
@@ -557,5 +561,30 @@ function KanbanView({ tasks }) {
         })}
       </div>
     </div>
+  )
+}
+
+// ── Sub-componente para inputs de texto con estado local ──────────────────────
+// Mantiene el valor mientras el usuario escribe y guarda al salir (blur/Enter).
+function InlineText({ value, onSave, disabled, placeholder = '—' }) {
+  const [local, setLocal] = useState(value)
+  // Sincronizar si el valor externo cambia (ej: después de guardar)
+  useEffect(() => { setLocal(value) }, [value])
+
+  function commit() {
+    if (local !== value) onSave(local)
+  }
+
+  return (
+    <input
+      className="inline-text"
+      value={local}
+      disabled={disabled}
+      placeholder={placeholder}
+      onChange={e => setLocal(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') { e.target.blur() } if (e.key === 'Escape') { setLocal(value); e.target.blur() } }}
+      style={{ fontSize: 10 }}
+    />
   )
 }
