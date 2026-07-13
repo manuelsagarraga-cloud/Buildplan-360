@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { useStore } from '../store/index.js'
-import { getVisibleTasks, businessDays, formatDate, isOverdue, addDays } from '../lib/utils.js'
+import { getVisibleTasks, businessDays, formatDate, isOverdue, addDays, getSuccessorChain, shiftDateStr, diffDays } from '../lib/utils.js'
 import { DEP_TYPE_ABBR, STATUS_LABELS, PRIORITY_LABELS, sb } from '../lib/supabase.js'
 import { GanttSvg } from './GanttSvg.jsx'
 import { toast } from './Toast.jsx'
@@ -151,22 +151,38 @@ export function GanttView() {
     }
   }
 
-  // Correr N días (positivo = adelante, negativo = atrás) las tareas seleccionadas
+  // Correr N días (positivo = adelante, negativo = atrás) las tareas seleccionadas.
+  // Si las seleccionadas tienen sucesoras encadenadas fuera de la selección,
+  // ofrece moverlas también (recálculo de dependencias en cascada).
   async function handleBulkShift(days) {
     const ids = [...selectedIds]
     if (!ids.length || !days) return
     setBulkBusy(true)
     try {
-      const sel = tasks.filter(t => selectedIds.has(t.id))
-      for (const t of sel) {
-        const patch = {}
-        if (t.start_date) patch.start_date = addDays(t.start_date, days)
-        if (t.end_date) patch.end_date = addDays(t.end_date, days)
-        if (Object.keys(patch).length) {
-          await sb.from('tasks').update(patch).eq('id', t.id)
-        }
+      // ¿Hay sucesoras encadenadas fuera de la selección?
+      const chain = getSuccessorChain(ids, deps)
+      let moveIds = new Set(ids)
+      if (chain.size > 0) {
+        const followChain = window.confirm(
+          `Las tareas seleccionadas tienen ${chain.size} tarea(s) sucesora(s) encadenada(s) por dependencias.\n\n` +
+          `¿Moverlas también ${days > 0 ? '+' : ''}${days} día(s) para mantener el cronograma consistente?\n\n` +
+          `Aceptar = mover selección + sucesoras (${ids.length + chain.size} tareas)\n` +
+          `Cancelar = mover solo la selección (${ids.length} tareas)`
+        )
+        if (followChain) chain.forEach(id => moveIds.add(id))
       }
-      toast(`${ids.length} tarea(s) corridas ${days > 0 ? '+' : ''}${days} día(s)`)
+
+      const toMove = tasks.filter(t => moveIds.has(t.id))
+      await Promise.all(toMove.map(t => {
+        const patch = {}
+        if (t.start_date) patch.start_date = shiftDateStr(t.start_date, days)
+        if (t.end_date) patch.end_date = shiftDateStr(t.end_date, days)
+        return Object.keys(patch).length
+          ? sb.from('tasks').update(patch).eq('id', t.id)
+          : Promise.resolve()
+      }))
+
+      toast(`${toMove.length} tarea(s) corridas ${days > 0 ? '+' : ''}${days} día(s)`)
       await loadProject(currentProject.id)
     } catch (e) {
       toast('Error al mover en lote', 'error')
@@ -488,7 +504,33 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
               }}
               onTaskDrag={async (taskId, newStart, newEnd) => {
                 try {
+                  const moved = tasks.find(x => x.id === taskId)
+                  const delta = moved?.start_date ? diffDays(moved.start_date, newStart) : 0
+
                   await sb.from('tasks').update({ start_date: newStart, end_date: newEnd }).eq('id', taskId)
+
+                  // Recálculo en cascada: ofrecer mover las sucesoras encadenadas
+                  if (delta !== 0) {
+                    const chain = getSuccessorChain([taskId], deps)
+                    if (chain.size > 0) {
+                      const follow = window.confirm(
+                        `"${moved?.name || 'Esta tarea'}" tiene ${chain.size} tarea(s) sucesora(s) encadenada(s).\n\n` +
+                        `¿Moverlas también ${delta > 0 ? '+' : ''}${delta} día(s) para mantener el cronograma consistente?`
+                      )
+                      if (follow) {
+                        const succ = tasks.filter(x => chain.has(x.id))
+                        await Promise.all(succ.map(s => {
+                          const patch = {}
+                          if (s.start_date) patch.start_date = shiftDateStr(s.start_date, delta)
+                          if (s.end_date) patch.end_date = shiftDateStr(s.end_date, delta)
+                          return Object.keys(patch).length
+                            ? sb.from('tasks').update(patch).eq('id', s.id)
+                            : Promise.resolve()
+                        }))
+                      }
+                    }
+                  }
+
                   await loadProject(currentProject.id)
                 } catch (e) {
                   console.error('Error al mover tarea:', e)
