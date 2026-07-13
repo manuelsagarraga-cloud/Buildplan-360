@@ -211,3 +211,34 @@ export function parseMSProjectXML(xmlText) {
     })),
   }
 }
+
+/**
+ * Devuelve el conjunto de IDs de TODAS las tareas sucesoras (directas y
+ * transitivas) de las tareas dadas, siguiendo task_dependencies.
+ * Protegida contra ciclos. No incluye las tareas de partida.
+ */
+export function getSuccessorChain(startIds, deps) {
+  const start = new Set(startIds)
+  const chain = new Set()
+  let frontier = new Set(startIds)
+  while (frontier.size > 0) {
+    const next = new Set()
+    for (const d of deps) {
+      if (frontier.has(d.predecessor_id)) {
+        const s = d.successor_id
+        if (!start.has(s) && !chain.has(s)) {
+          chain.add(s)
+          next.add(s)
+        }
+      }
+    }
+    frontier = next
+  }
+  return chain
+}
+
+/** Corre una fecha en formato 'YYYY-MM-DD' N días (negativo = atrás). */
+export function shiftDateStr(dateStr, days) {
+  if (!dateStr) return dateStr
+  return dateToISO(addDays(parseDate(dateStr), days))
+}
