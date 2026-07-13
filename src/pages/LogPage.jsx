@@ -3,6 +3,7 @@ import { useStore } from '../store/index.js'
 import { useAuth } from '../store/auth.js'
 import { sb, SUPABASE_URL } from '../lib/supabase.js'
 import { toast } from '../components/Toast.jsx'
+import { compressImage } from '../lib/images.js'
 
 const ENTRY_TYPES = ['observacion', 'avance', 'incidente', 'entrega', 'reunion', 'otro']
 const TYPE_LABELS = { observacion: 'Observación', avance: 'Avance', incidente: 'Incidente', entrega: 'Entrega', reunion: 'Reunión', otro: 'Otro' }
@@ -193,23 +194,4 @@ export function LogPage() {
       )}
     </div>
   )
-}
-
-// Comprimir imagen antes de subir (máx 1920px, JPEG 80%)
-async function compressImage(file) {
-  if (!file.type.startsWith('image/') || file.type === 'image/gif') return file
-  if (file.size < 200 * 1024) return file
-  return new Promise(resolve => {
-    const img = new Image()
-    img.onload = () => {
-      const MAX = 1920
-      let w = img.width, h = img.height
-      if (w > MAX || h > MAX) { if (w > h) { h = Math.round(h * MAX / w); w = MAX } else { w = Math.round(w * MAX / h); h = MAX } }
-      const canvas = document.createElement('canvas')
-      canvas.width = w; canvas.height = h
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h)
-      canvas.toBlob(blob => resolve(blob || file), 'image/jpeg', 0.8)
-    }
-    img.src = URL.createObjectURL(file)
-  })
 }
