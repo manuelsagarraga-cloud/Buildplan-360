@@ -19,6 +19,19 @@ import { BoardPage } from './pages/BoardPage.jsx'
 import { HolidaysPage } from './pages/HolidaysPage.jsx'
 import { AdminPage } from './pages/AdminPage.jsx'
 import { OfflineBanner } from './components/OfflineBanner.jsx'
+import { MobileApp } from './components/MobileApp.jsx'
+
+// Detecta pantalla chica (móvil) y reacciona a cambios de tamaño/rotación
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const handler = e => setIsMobile(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+  return isMobile
+}
 
 export default function App() {
   const { initAuth, authReady, session, currentMember, role, canEdit, isSuperAdmin, signOut } = useAuth()
@@ -28,6 +41,7 @@ export default function App() {
     editMode, setEditMode,
   } = useStore()
   const [searchOpen, setSearchOpen] = useState(false)
+  const isMobile = useIsMobile()
 
   // Ctrl+K abre la búsqueda
   useEffect(() => {
@@ -69,6 +83,11 @@ export default function App() {
         <ToastContainer />
       </>
     )
+  }
+
+  // ── Vista móvil: en pantallas chicas, app simplificada para obra ──
+  if (isMobile) {
+    return <MobileApp />
   }
 
   const displayName = currentMember?.name || session.user?.email || 'Usuario'
