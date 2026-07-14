@@ -1,10 +1,12 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { useStore } from '../store/index.js'
 import { getVisibleTasks, businessDays, formatDate, isOverdue, addDays, getSuccessorChain, shiftDateStr, diffDays } from '../lib/utils.js'
-import { DEP_TYPE_ABBR, STATUS_LABELS, PRIORITY_LABELS, sb } from '../lib/supabase.js'
+import { DEP_TYPE_ABBR, sb } from '../lib/supabase.js'
 import { GanttSvg } from './GanttSvg.jsx'
 import { toast } from './Toast.jsx'
 import { ProjectSummary } from './ProjectSummary.jsx'
+import { ListView, KanbanView } from './TaskViews.jsx'
+import { InlineText } from './InlineText.jsx'
 
 const COL_DEFS = [
   { key: '#',           label: '#',           w: 26,  toggle: false },
@@ -35,7 +37,7 @@ export function GanttView() {
     filters, setFilters, viewMode, setViewMode,
     collapsed, toggleCollapsed, pinnedTaskIds, togglePinned,
     editMode, openTaskModal, openImportModal,
-    indentTask, outdentTask, linkTasks, loadProject,
+    indentTask, outdentTask, linkTasks, loadProject, pushUndo, undo, undoStack,
   } = useStore()
 
   const [hiddenCols, setHiddenCols] = useState(
@@ -173,6 +175,9 @@ export function GanttView() {
       }
 
       const toMove = tasks.filter(t => moveIds.has(t.id))
+      // Snapshot de valores previos para deshacer
+      pushUndo(`Mover ${toMove.length} tarea(s) ${days > 0 ? '+' : ''}${days}d`,
+        toMove.map(t => ({ id: t.id, start_date: t.start_date, end_date: t.end_date })))
       await Promise.all(toMove.map(t => {
         const patch = {}
         if (t.start_date) patch.start_date = shiftDateStr(t.start_date, days)
@@ -241,6 +246,15 @@ export function GanttView() {
             >
               {ganttHidden ? '▶ Mostrar Gantt' : '⊟ Solo tareas'}
             </button>
+            {editMode && undoStack.length > 0 && (
+              <button
+                className="btn"
+                onClick={async () => { const label = await undo(); if (label) toast(`Deshecho: ${label}`) }}
+                title={`Deshacer: ${undoStack[0]?.label || ''}`}
+              >
+                ↶ Deshacer
+              </button>
+            )}
             <div className={`col-menu ${colMenuOpen ? 'open' : ''}`}>
               {COL_DEFS.filter(c => c.toggle).map(c => (
                 <label key={c.key}>
@@ -507,6 +521,9 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
                   const moved = tasks.find(x => x.id === taskId)
                   const delta = moved?.start_date ? diffDays(moved.start_date, newStart) : 0
 
+                  // Snapshot para deshacer: la tarea movida (valores previos)
+                  const undoChanges = [{ id: taskId, start_date: moved?.start_date, end_date: moved?.end_date }]
+
                   await sb.from('tasks').update({ start_date: newStart, end_date: newEnd }).eq('id', taskId)
 
                   // Recálculo en cascada: ofrecer mover las sucesoras encadenadas
@@ -519,6 +536,7 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
                       )
                       if (follow) {
                         const succ = tasks.filter(x => chain.has(x.id))
+                        succ.forEach(s => undoChanges.push({ id: s.id, start_date: s.start_date, end_date: s.end_date }))
                         await Promise.all(succ.map(s => {
                           const patch = {}
                           if (s.start_date) patch.start_date = shiftDateStr(s.start_date, delta)
@@ -531,6 +549,7 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
                     }
                   }
 
+                  pushUndo(`Mover "${moved?.name || 'tarea'}"`, undoChanges)
                   await loadProject(currentProject.id)
                 } catch (e) {
                   console.error('Error al mover tarea:', e)
@@ -541,121 +560,5 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
         </div>
       )}
     </div>
-  )
-}
-
-// ── List view ────────────────────────────────────────────────
-function ListView({ tasks }) {
-  const { members, editMode, openTaskModal } = useStore()
-  return (
-    <div className="view-list">
-      <table className="task-table">
-        <thead>
-          <tr>
-            <th>#</th><th>Tarea</th><th>Responsable</th><th>Estado</th>
-            <th>Prioridad</th><th>Inicio</th><th>Fin</th><th>Avance</th>
-          </tr>
-        </thead>
-        <tbody>
-          {tasks.length === 0
-            ? <tr><td colSpan={8} className="empty-state">Sin tareas</td></tr>
-            : tasks.map((t, i) => {
-              const m = t.assigned_to ? members.find(x => x.id === t.assigned_to) : null
-              const parent = t.parent_task_id ? tasks.find(x => x.id === t.parent_task_id) : null
-              const barCol = t.status === 'completed' ? 'var(--success)' : t.status === 'blocked' ? 'var(--danger)' : t.status === 'in_progress' ? 'var(--info)' : 'var(--neutral)'
-              return (
-                <tr key={t.id} onClick={() => editMode && openTaskModal(t)}>
-                  <td style={{ color: 'var(--text-3)', fontWeight: 600 }}>{i + 1}</td>
-                  <td>
-                    <div style={{ fontWeight: 600 }}>
-                      {parent && <div style={{ color: 'var(--text-3)', fontSize: 11 }}>↳ {parent.name}</div>}
-                      {t.name}
-                    </div>
-                  </td>
-                  <td>{m ? <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span className="avatar" style={{ background: m.color }}>{m.name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()}</span>{m.name}</div> : <span style={{ color: 'var(--text-3)' }}>Sin asignar</span>}</td>
-                  <td><span className={`badge badge-${t.status}`}>{STATUS_LABELS[t.status]}</span></td>
-                  <td><span className={`badge badge-${t.priority}`}>{PRIORITY_LABELS[t.priority]}</span></td>
-                  <td><span className="date">{formatDate(t.start_date)}</span></td>
-                  <td><span className={`date ${isOverdue(t) ? 'overdue' : ''}`}>{formatDate(t.end_date)}</span></td>
-                  <td className="progress-cell">
-                    <div className="progress">
-                      <div className="progress-bar-bg"><div className="progress-bar" style={{ width: (t.progress || 0) + '%', background: barCol }} /></div>
-                      <span className="progress-value">{t.progress || 0}%</span>
-                    </div>
-                  </td>
-                </tr>
-              )
-            })
-          }
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-// ── Kanban view ──────────────────────────────────────────────
-function KanbanView({ tasks }) {
-  const { members, editMode, openTaskModal } = useStore()
-  const cols = [
-    { key: 'pending', label: 'Pendiente' },
-    { key: 'in_progress', label: 'En progreso' },
-    { key: 'completed', label: 'Completada' },
-    { key: 'blocked', label: 'Bloqueada' },
-  ]
-  return (
-    <div className="view-kanban">
-      <div className="kanban-board">
-        {cols.map(col => {
-          const ct = tasks.filter(t => t.status === col.key)
-          return (
-            <div key={col.key} className="kanban-column">
-              <div className="kanban-column-header">
-                <span className="kanban-column-title">{col.label}</span>
-                <span className="kanban-count">{ct.length}</span>
-              </div>
-              {ct.length === 0 && <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-3)', fontSize: 12 }}>Sin tareas</div>}
-              {ct.map(t => {
-                const m = t.assigned_to ? members.find(x => x.id === t.assigned_to) : null
-                return (
-                  <div key={t.id} className="kanban-card" onClick={() => editMode && openTaskModal(t)}>
-                    <div className="kanban-card-title">{t.name}</div>
-                    <span className={`badge badge-${t.priority}`}>{PRIORITY_LABELS[t.priority]}</span>
-                    <div className="kanban-card-meta">
-                      {m ? <span className="avatar" style={{ background: m.color }} title={m.name}>{m.name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()}</span> : <span />}
-                      <span className={`kanban-card-date ${isOverdue(t) ? 'overdue' : ''}`}>{formatDate(t.end_date)}</span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-// ── Sub-componente para inputs de texto con estado local ──────────────────────
-// Mantiene el valor mientras el usuario escribe y guarda al salir (blur/Enter).
-function InlineText({ value, onSave, disabled, placeholder = '—' }) {
-  const [local, setLocal] = useState(value)
-  // Sincronizar si el valor externo cambia (ej: después de guardar)
-  useEffect(() => { setLocal(value) }, [value])
-
-  function commit() {
-    if (local !== value) onSave(local)
-  }
-
-  return (
-    <input
-      className="inline-text"
-      value={local}
-      disabled={disabled}
-      placeholder={placeholder}
-      onChange={e => setLocal(e.target.value)}
-      onBlur={commit}
-      onKeyDown={e => { if (e.key === 'Enter') { e.target.blur() } if (e.key === 'Escape') { setLocal(value); e.target.blur() } }}
-      style={{ fontSize: 10 }}
-    />
   )
 }
