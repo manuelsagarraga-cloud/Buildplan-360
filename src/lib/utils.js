@@ -242,3 +242,21 @@ export function shiftDateStr(dateStr, days) {
   if (!dateStr) return dateStr
   return dateToISO(addDays(parseDate(dateStr), days))
 }
+
+/**
+ * Calcula la "frescura" de un proyecto según su última actividad.
+ * Devuelve { dias, nivel: 'fresco'|'tibio'|'frio'|'sin_datos', texto }
+ */
+export function freshness(lastActivity) {
+  if (!lastActivity) return { dias: null, nivel: 'sin_datos', texto: 'Sin actividad' }
+  const dias = Math.floor((Date.now() - new Date(lastActivity).getTime()) / 86400000)
+  let nivel
+  if (dias <= 7) nivel = 'fresco'
+  else if (dias <= 14) nivel = 'tibio'
+  else nivel = 'frio'
+  let texto
+  if (dias === 0) texto = 'Actualizado hoy'
+  else if (dias === 1) texto = 'Actualizado ayer'
+  else texto = `Hace ${dias} días`
+  return { dias, nivel, texto }
+}
