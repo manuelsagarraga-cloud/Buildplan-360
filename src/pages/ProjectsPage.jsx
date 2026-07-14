@@ -1,6 +1,6 @@
 import React from 'react'
 import { useStore } from '../store/index.js'
-import { formatDate, diffDays } from '../lib/utils.js'
+import { formatDate, diffDays, freshness } from '../lib/utils.js'
 import { PROJECT_STATUS_LABELS } from '../lib/supabase.js'
 import { HomeDashboard } from '../components/HomeDashboard.jsx'
 
@@ -45,12 +45,20 @@ export function ProjectsPage() {
               const mgr = p.manager_id ? members.find(m => m.id === p.manager_id) : null
               const [bg, fg] = STATUS_COLORS[p.status] || STATUS_COLORS.active
               const dur = diffDays(p.start_date, p.end_date) + 1
+              const fresh = freshness(p.last_activity)
               return (
                 <div key={p.id} className="pc-card" onClick={() => loadProject(p.id)}>
                   <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
                     <div style={{ width: 4, borderRadius: 2, background: p.color || 'var(--brand)', flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="pc-card-name">{p.name}</div>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                        <div className="pc-card-name">{p.name}</div>
+                        {(p.status === 'active') && (
+                          <span className={`freshness-badge fresh-${fresh.nivel}`} title={`Última actividad: ${fresh.texto}`}>
+                            {fresh.nivel === 'fresco' ? '🟢' : fresh.nivel === 'tibio' ? '🟡' : fresh.nivel === 'frio' ? '🔴' : '⚪'} {fresh.texto}
+                          </span>
+                        )}
+                      </div>
                       <span className="status-pill" style={{ background: bg, color: fg, marginBottom: 8, display: 'inline-flex' }}>
                         {PROJECT_STATUS_LABELS[p.status] || p.status}
                       </span>
