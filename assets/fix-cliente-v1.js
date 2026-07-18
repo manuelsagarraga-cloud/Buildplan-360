@@ -3,25 +3,25 @@
  * ---------------------------------------------------------------------------
  * PROBLEMAS QUE RESUELVE
  *
- * 1. window._p360sb (cliente Supabase compartido)
- *    Lee la anon key directamente del bundle compilado (está hardcodeada ahí,
- *    es pública por diseño en apps Supabase). No intercepta fetch ni depende
- *    de la estructura interna de React. Sobrevive a recompilaciones del bundle.
+ * 1. window._p360sb — cliente Supabase compartido
+ *    Construye un cliente REST mínimo con fetch puro. Sin dependencias de CDN,
+ *    sin interceptar fetch, sin depender de fibers de React.
+ *    Sobrevive a recompilaciones del bundle.
  *
  * 2. Keepalive de conexión ("Conectando..." recurrente)
- *    Los routers domésticos matan WebSockets inactivos cada ~30s.
- *    Este parche hace un ping liviano cada 20s para mantener la conexión viva.
+ *    Ping liviano cada 20s para que el router no mate el WebSocket de Realtime.
  *    Evita que el import masivo de tareas se interrumpa a mitad.
  *
  * INSTALACION
- *  1) Copiar este archivo a /assets/ en el repo.
+ *  1) Copiar a /assets/ en el repo.
  *  2) En index.html Y 404.html, dentro del <head>,
  *     ANTES del <script type="module"> del bundle:
  *       <script src="./assets/fix-cliente-v1.js"></script>
  *  3) Commit + push → recargar con Ctrl+F5.
  *
  * VERIFICACION (consola, app logueada):
- *     typeof window._p360sb   // debe dar "object"
+ *     typeof window._p360sb              // "object"
+ *     window._p360sb._isP360Client       // true
  * ---------------------------------------------------------------------------
  */
 (function () {
@@ -30,123 +30,220 @@
   var REF    = "qpqoqrroplkyyelkqnxo";
   var SB_URL = "https://" + REF + ".supabase.co";
 
-  // ── 1) Detectar la storageKey de sesión para heredar el login actual ──
-  function detectStorageKey() {
+  // ── Leer el JWT de sesión del usuario logueado desde localStorage ──
+  function getSessionToken() {
     for (var i = 0; i < localStorage.length; i++) {
       var k = localStorage.key(i);
-      if (/^sb-.*-auth-token$/.test(k)) return k;
+      if (/^sb-.*-auth-token$/.test(k)) {
+        try {
+          var data = JSON.parse(localStorage.getItem(k));
+          return (data && data.access_token) ? data.access_token : null;
+        } catch (e) { return null; }
+      }
     }
-    return "sb-" + REF + "-auth-token";
+    return null;
   }
 
-  // ── 2) Extraer la anon key del bundle (está hardcodeada, es pública) ──
-  function extractAnonKey() {
-    return new Promise(function (resolve, reject) {
-      // Buscar el script del bundle (type="module" con "index-" en el src)
-      var bundleEl = document.querySelector('script[type="module"][src*="index-"]');
-      if (!bundleEl) {
-        return reject(new Error("No se encontró el script del bundle"));
+  // ── Construir headers para cada request ──
+  function makeHeaders(anonKey) {
+    var token   = getSessionToken() || anonKey;
+    var headers = {
+      "apikey":        anonKey,
+      "Authorization": "Bearer " + token,
+      "Content-Type":  "application/json",
+      "Accept":        "application/json"
+    };
+    return headers;
+  }
+
+  // ── Cliente REST mínimo (replica la interfaz que usan los parches) ──
+  function createMinimalClient(anonKey) {
+
+    function query(table) {
+      var _url     = SB_URL + "/rest/v1/" + table;
+      var _filters = [];
+      var _select  = null;
+      var _order   = null;
+      var _limit   = null;
+
+      function buildUrl(extra) {
+        var params = [];
+        if (_select) params.push("select=" + encodeURIComponent(_select));
+        _filters.forEach(function (f) { params.push(f); });
+        if (_order) params.push("order=" + encodeURIComponent(_order));
+        if (_limit) params.push("limit=" + _limit);
+        if (extra)  params = params.concat(extra);
+        return _url + (params.length ? "?" + params.join("&") : "");
       }
 
-      var bundleUrl = bundleEl.src;
-      console.log("[fix-cliente] Leyendo bundle:", bundleUrl);
+      function run(method, body, urlExtra, prefer) {
+        var h = makeHeaders(anonKey);
+        if (prefer) h["Prefer"] = prefer;
+        return fetch(buildUrl(urlExtra), {
+          method:  method,
+          headers: h,
+          body:    body ? JSON.stringify(body) : undefined
+        }).then(function (r) {
+          if (!r.ok) {
+            return r.text().then(function (t) {
+              return { data: null, error: { message: t, status: r.status } };
+            });
+          }
+          var ct = r.headers.get("content-type") || "";
+          if (ct.indexOf("json") > -1) {
+            return r.json().then(function (d) { return { data: d, error: null }; });
+          }
+          return { data: null, error: null };
+        }).catch(function (e) {
+          return { data: null, error: { message: e.message } };
+        });
+      }
 
-      fetch(bundleUrl)
+      var builder = {
+        select: function (cols) { _select = cols || "*"; return builder; },
+        eq:     function (col, val) {
+          _filters.push(encodeURIComponent(col) + "=eq." + encodeURIComponent(val));
+          return builder;
+        },
+        in:     function (col, vals) {
+          _filters.push(encodeURIComponent(col) + "=in.(" + vals.map(encodeURIComponent).join(",") + ")");
+          return builder;
+        },
+        order:  function (col, opts) {
+          _order = col + (opts && opts.ascending === false ? ".desc" : ".asc");
+          return builder;
+        },
+        limit:  function (n) { _limit = n; return builder; },
+
+        // Lecturas
+        then: function (resolve, reject) {
+          if (!_select) _select = "*";
+          return run("GET").then(resolve, reject);
+        },
+
+        // Escrituras
+        insert: function (body, opts) {
+          var prefer = "return=representation";
+          if (opts && opts.returning === "minimal") prefer = "return=minimal";
+          return run("POST", body, null, prefer);
+        },
+        update: function (body) {
+          return {
+            eq: function (col, val) {
+              _filters.push(encodeURIComponent(col) + "=eq." + encodeURIComponent(val));
+              return run("PATCH", body, null, "return=representation");
+            },
+            in: function (col, vals) {
+              _filters.push(encodeURIComponent(col) + "=in.(" + vals.map(encodeURIComponent).join(",") + ")");
+              return run("PATCH", body, null, "return=representation");
+            }
+          };
+        },
+        delete: function () {
+          return {
+            eq: function (col, val) {
+              _filters.push(encodeURIComponent(col) + "=eq." + encodeURIComponent(val));
+              return run("DELETE", null, null, "return=minimal");
+            }
+          };
+        },
+
+        // RPC
+        rpc: function (fn, params) {
+          return fetch(SB_URL + "/rest/v1/rpc/" + fn, {
+            method:  "POST",
+            headers: makeHeaders(anonKey),
+            body:    JSON.stringify(params || {})
+          }).then(function (r) {
+            return r.json().then(function (d) {
+              return r.ok
+                ? { data: d, error: null }
+                : { data: null, error: d };
+            });
+          }).catch(function (e) {
+            return { data: null, error: { message: e.message } };
+          });
+        }
+      };
+
+      return builder;
+    }
+
+    return {
+      _isP360Client: true,
+      from:  query,
+      rpc:   function (fn, params) { return query("").rpc(fn, params); },
+      auth: {
+        getSession: function () {
+          var token = getSessionToken();
+          return Promise.resolve({
+            data:  { session: token ? { access_token: token } : null },
+            error: null
+          });
+        }
+      }
+    };
+  }
+
+  // ── Extraer anon key del bundle compilado ──
+  function extractAnonKey() {
+    return new Promise(function (resolve, reject) {
+      var bundleEl = document.querySelector('script[type="module"][src*="index-"]');
+      if (!bundleEl) return reject(new Error("Bundle no encontrado en el DOM"));
+
+      fetch(bundleEl.src)
         .then(function (r) { return r.text(); })
         .then(function (code) {
-          // La anon key es un JWT: empieza con eyJ y tiene 3 segmentos separados por .
-          var matches = code.match(/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g);
+          var matches = code.match(
+            /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g
+          );
           if (!matches || matches.length === 0) {
-            return reject(new Error("No se encontró ningún JWT en el bundle"));
+            return reject(new Error("No se encontraron JWTs en el bundle"));
           }
 
-          // El token más largo que NO sea el access token de sesión es la anon key.
-          // La anon key de Supabase tiene el role "anon" en su payload.
-          var anonKey = null;
           for (var i = 0; i < matches.length; i++) {
             try {
               var payload = JSON.parse(atob(matches[i].split(".")[1]));
-              if (payload.role === "anon") {
-                anonKey = matches[i];
-                break;
-              }
+              if (payload.role === "anon") return resolve(matches[i]);
             } catch (e) { /* continuar */ }
           }
-
-          // Fallback: si no encontramos role=anon, tomar el JWT más largo
-          if (!anonKey) {
-            anonKey = matches.reduce(function (a, b) {
-              return a.length >= b.length ? a : b;
-            });
-          }
-
-          resolve(anonKey);
+          // fallback: JWT más largo
+          resolve(matches.reduce(function (a, b) {
+            return a.length >= b.length ? a : b;
+          }));
         })
         .catch(reject);
     });
   }
 
-  // ── 3) Cargar supabase-js desde CDN ──
-  function loadSupabaseJS() {
-    return new Promise(function (resolve, reject) {
-      if (window.supabase && window.supabase.createClient) {
-        return resolve(window.supabase);
-      }
-      var s     = document.createElement("script");
-      s.src     = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js";
-      s.onload  = function () { resolve(window.supabase); };
-      s.onerror = function () { reject(new Error("No se pudo cargar supabase-js desde CDN")); };
-      document.head.appendChild(s);
-    });
-  }
-
-  // ── 4) Keepalive: ping cada 20s para que el router no mate el WebSocket ──
+  // ── Keepalive: ping cada 20s ──
   function startKeepalive(anonKey) {
     setInterval(function () {
       fetch(SB_URL + "/rest/v1/system_settings?select=key&limit=1", {
-        headers: {
-          "apikey":        anonKey,
-          "Authorization": "Bearer " + anonKey
-        }
-      }).catch(function () { /* silencioso — solo es un ping */ });
+        headers: makeHeaders(anonKey)
+      }).catch(function () { /* silencioso */ });
     }, 20000);
-    console.log("[fix-cliente] Keepalive activo (ping cada 20s).");
+    console.log("[fix-cliente] Keepalive activo (ping cada 20s). Adiós 'Conectando...'");
   }
 
-  // ── 5) Construir el cliente y guardarlo en window._p360sb ──
-  function buildClient(anonKey) {
-    return loadSupabaseJS().then(function (sb) {
-      var client = sb.createClient(SB_URL, anonKey, {
-        auth: {
-          storageKey:         detectStorageKey(), // hereda la sesión logueada
-          persistSession:     true,
-          autoRefreshToken:   false,  // el bundle ya refresca; evitamos conflicto
-          detectSessionInUrl: false
-        }
-      });
-
-      window._p360sb = client;
-
-      window._p360ensureSession = function () {
-        return client.auth.getSession();
-      };
-
-      try { window.dispatchEvent(new Event("p360sb-ready")); } catch (e) {}
-
-      console.log("[fix-cliente] window._p360sb LISTO. Escrituras de parches activas.");
-      startKeepalive(anonKey);
-
-      return client;
-    });
-  }
-
-  // ── 6) Init (espera a que el DOM esté listo para leer el src del bundle) ──
+  // ── Init ──
   function init() {
     var run = function () {
       extractAnonKey()
-        .then(buildClient)
+        .then(function (anonKey) {
+          window._p360sb = createMinimalClient(anonKey);
+          window._p360ensureSession = function () {
+            return window._p360sb.auth.getSession();
+          };
+          try { window.dispatchEvent(new Event("p360sb-ready")); } catch (e) {}
+          startKeepalive(anonKey);
+          console.log(
+            "[fix-cliente] window._p360sb LISTO (cliente REST mínimo, sin CDN). " +
+            "Escrituras de parches activas."
+          );
+        })
         .catch(function (err) {
-          console.error("[fix-cliente] Error:", err.message);
+          console.error("[fix-cliente] No se pudo inicializar:", err.message);
         });
     };
 
