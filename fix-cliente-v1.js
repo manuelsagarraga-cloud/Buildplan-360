@@ -219,7 +219,7 @@
   // ── Keepalive: ping cada 20s ──
   function startKeepalive(anonKey) {
     setInterval(function () {
-      fetch(SB_URL + "/rest/v1/system_settings?select=key&limit=1", {
+      fetch(SB_URL + "/rest/v1/company_holidays?select=id&limit=1", {
         headers: makeHeaders(anonKey)
       }).catch(function () { /* silencioso */ });
     }, 20000);
