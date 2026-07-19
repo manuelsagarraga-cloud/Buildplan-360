@@ -26,8 +26,9 @@ jobs:
       # Agregar aquí una línea por cada nuevo parche que se incorpore.
       - name: Copiar parches al output
         run: |
-          cp fix-cliente-v1.js     dist/assets/fix-cliente-v1.js
-          cp campos-proyecto-v1.js dist/assets/campos-proyecto-v1.js
+          cp fix-cliente-v1.js       dist/assets/fix-cliente-v1.js
+          cp campos-proyecto-v1.js   dist/assets/campos-proyecto-v1.js
+          cp admin-listas-v1.js      dist/assets/admin-listas-v1.js
 
       # ── Copiar 404.html al output (fallback SPA) ─────────────────────────
       - name: Copiar 404.html al output
