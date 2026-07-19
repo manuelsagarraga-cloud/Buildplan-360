@@ -234,15 +234,27 @@
     console.log('[' + PATCH + '] Ítem "Listas" inyectado en el sidebar.');
   }
 
-  // ── MutationObserver ───────────────────────────────────────────────────────
-  var obs = new MutationObserver(function () {
+  // ── MutationObserver — espera a que Papelera esté en el sidebar ──────────
+  // El sidebar-nav aparece antes que sus ítems; esperamos hasta que
+  // el botón "Papelera" exista para insertar después de él.
+  function tryInject() {
     var sidebarNav = document.querySelector('.sidebar-nav');
-    if (sidebarNav) injectNavItem(sidebarNav);
+    if (!sidebarNav) return false;
+    if (sidebarNav.querySelector('[data-p360-listas]')) return true; // ya inyectado
+    // Intentar inyectar (si Papelera no está aún, igual agrega al final)
+    injectNavItem(sidebarNav);
+    return !!sidebarNav.querySelector('[data-p360-listas]');
+  }
+
+  var obs = new MutationObserver(function () {
+    if (tryInject()) obs.disconnect();
   });
   obs.observe(document.body, { childList: true, subtree: true });
 
-  // Intento inmediato
-  var sidebarNav = document.querySelector('.sidebar-nav');
-  if (sidebarNav) injectNavItem(sidebarNav);
+  // Reintento por polling (por si el observer ya no alcanza)
+  var retries = 0;
+  var retryTimer = setInterval(function () {
+    if (tryInject() || ++retries > 30) clearInterval(retryTimer);
+  }, 300);
 
 })();
