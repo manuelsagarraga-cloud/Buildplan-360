@@ -397,20 +397,29 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
                   key={t.id}
                   className={rowCls}
                   style={{ '--col-tpl': colTpl }}
-                  onClick={() => { if (editMode) openTaskModal(tasks.find(x => x.id === t.id) || t) }}
+                  onClick={(e) => toggleSelect(t.id, e)}
                 >
                   <div className="cell" style={{ justifyContent: 'center', color: 'var(--text-3)', fontSize: 10 }}>
                     <input type="checkbox" checked={isSelected} onChange={e => toggleSelect(t.id, e)} onClick={e => e.stopPropagation()} style={{ marginRight: 2, accentColor: 'var(--brand)' }} />
                     {i + 1}
                   </div>
-                  <div className="cell task-name-cell">
+                  <div className="cell task-name-cell" onClick={e => { if (editMode) e.stopPropagation() }}>
                     <span className="indent" style={{ width: indent }} />
                     {t.hasChildren
                       ? <span className="expand-toggle" onClick={e => { e.stopPropagation(); toggleCollapsed(t.id) }}>{t.isCollapsed ? '▸' : '▾'}</span>
                       : <span className="expand-toggle empty">·</span>
                     }
                     {isMilestone && <span style={{ color: 'var(--accent)', fontSize: 10, marginRight: 2 }}>◆</span>}
-                    <span className="task-name-text" title={t.name}>{t.name}</span>
+                    {editMode
+                      ? <InlineText value={t.name || ''} onSave={v => quickSave(t.id, 'name', v)} disabled={saving[t.id]} placeholder="(sin nombre)" />
+                      : <span className="task-name-text" title={t.name}>{t.name}</span>}
+                    <button
+                      type="button"
+                      className="row-open-btn"
+                      title="Abrir ficha de la tarea"
+                      onClick={e => { e.stopPropagation(); openTaskModal(tasks.find(x => x.id === t.id) || t) }}
+                      style={{ marginLeft: 'auto', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 12, lineHeight: 1, padding: '0 4px', color: 'var(--text-3)', flexShrink: 0 }}
+                    >✎</button>
                   </div>
                   {!hiddenCols.has('dur') && <div className="cell" style={{ fontSize: 10, color: 'var(--text-2)', fontFamily: 'JetBrains Mono, monospace', justifyContent: 'center' }}>{dur}</div>}
                   {!hiddenCols.has('resp') && (
