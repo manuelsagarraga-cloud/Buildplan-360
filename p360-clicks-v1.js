@@ -147,13 +147,14 @@
       var sb = window._p360sb; if (!sb) { body.textContent = 'No encuentro el cliente de datos.'; return; }
       var row = document.querySelector('.task-row'); var tid = row && taskIdOf(row);
       if (!tid) { body.textContent = 'Abrí un proyecto (vista Cuadrícula) para usar la línea base.'; return; }
-      var one = await sb.from('tasks').select('project_id').eq('id', tid).single();
-      if (one.error || !one.data) { body.textContent = 'No pude identificar el proyecto.'; return; }
-      var pid = one.data.project_id;
-      var proj = await sb.from('projects').select('name').eq('id', pid).single();
+      var one = await sb.from('tasks').select('project_id').eq('id', tid);
+      if (one.error || !one.data || !one.data[0]) { body.textContent = 'No pude identificar el proyecto.'; return; }
+      var pid = one.data[0].project_id;
+      var proj = await sb.from('projects').select('name').eq('id', pid);
+      var projName = (proj.data && proj.data[0] && proj.data[0].name) || 'Proyecto';
       var tasks = await sb.from('tasks').select('id,name,start_date,end_date,order_index').eq('project_id', pid);
       var bls = await sb.from('project_baselines').select('*').eq('project_id', pid).order('created_at', { ascending: false });
-      renderPanel(body, pid, (proj.data && proj.data.name) || 'Proyecto', tasks.data || [], (bls.data || []));
+      renderPanel(body, pid, projName, tasks.data || [], (bls.data || []));
     } catch (err) { body.textContent = 'Error cargando la línea base: ' + err; }
   }
 
