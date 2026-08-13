@@ -1,11 +1,13 @@
 /**
- * Pipeline360 v2 — p360-clicks-v1.js  (v1.2)
+ * Pipeline360 v2 — p360-clicks-v1.js  (v1.3)
  *
  *  A) Clic en la grilla:
  *     · Clic simple en una fila → SELECCIONAR (marca el checkbox). No abre la ficha.
  *     · ✎ (Modo Edición) → ABRIR la ficha completa.
  *     · Doble clic en el NOMBRE (Modo Edición) → editarlo inline (Enter guarda, Esc cancela).
- *  B) LÍNEA BASE (nuevo): botón flotante "📊 Línea base" que abre un panel para
+ *  C) OUTDENT estilo Project: al quitar sangría a X, X sube un nivel y las tareas
+ *     hermanas que venían DESPUÉS pasan a ser hijas de X (adopción), como en MS Project.
+ *  B) LÍNEA BASE: botón flotante "📊 Línea base" que abre un panel para
  *     · CREAR una línea base del proyecto abierto (usa la función create_baseline).
  *     · VER la variación vs la última línea base: "Su plan lleva un retraso de X días"
  *       + detalle por tarea (Fin previsto vs Fin actual = Variación de fin).
@@ -215,6 +217,76 @@
   }
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+
+
+  /* ===================== C) OUTDENT ESTILO PROJECT ===================== */
+  function isStore(o){ return o && typeof o==='object' && typeof o.reloadProject==='function' && Array.isArray(o.tasks); }
+  function findStore(){
+    try{
+      var starts=[]; var tr=document.querySelector('.task-row'); if(tr) starts.push(tr);
+      document.querySelectorAll('button.btn').forEach(function(b){ starts.push(b); });
+      var root=document.getElementById('root'); if(root) starts.push(root);
+      for(var n=0;n<starts.length;n++){
+        var el=starts[n];
+        var key=Object.keys(el).find(function(k){ return k.indexOf('__reactFiber$')===0 || k.indexOf('__reactInternalInstance$')===0; });
+        var f=key?el[key]:null, guard=0;
+        while(f && guard<300){
+          var hook=f.memoizedState, g2=0;
+          while(hook && g2<100){
+            var st=hook.memoizedState;
+            if(isStore(st)) return st;
+            if(st && typeof st==='object'){ for(var kk in st){ try{ if(isStore(st[kk])) return st[kk]; }catch(_){} } }
+            hook=hook.next; g2++;
+          }
+          f=f.return; guard++;
+        }
+      }
+    }catch(e){}
+    return null;
+  }
+
+  async function fixedOutdent(store){
+    var sel=store.selectedTaskIds;
+    var ids = sel && typeof sel.forEach==='function' ? Array.from(sel) : (Array.isArray(sel)?sel:[]);
+    if(ids.length!==1) return { skip:true };
+    var X=store.tasks.find(function(t){ return t.id===ids[0]; });
+    if(!X || !X.parent_task_id) return { done:false };
+    var oldParent=X.parent_task_id;
+    var parent=store.tasks.find(function(t){ return t.id===oldParent; });
+    var grandparent=parent?(parent.parent_task_id||null):null;
+    var sibs=store.tasks.filter(function(t){ return (t.parent_task_id||null)===(oldParent||null); })
+                        .sort(function(a,b){ return (a.order_index||0)-(b.order_index||0); });
+    var xi=sibs.findIndex(function(t){ return t.id===X.id; });
+    var followers=sibs.slice(xi+1);
+    if(followers.length){
+      if(!window.confirm('Quitar sangría de \u00ab'+(X.name||'')+'\u00bb: sube un nivel y las '+followers.length+' tarea(s) siguientes pasan a ser sus hijas (como en Project). \u00bfContinuar?')) return { done:false };
+    }
+    var sb=window._p360sb; if(!sb) return { error:'sin cliente de datos' };
+    var r1=await sb.from('tasks').update({ parent_task_id: grandparent }).eq('id', X.id);
+    if(r1 && r1.error) return { error:r1.error.message };
+    for(var i=0;i<followers.length;i++){
+      var rf=await sb.from('tasks').update({ parent_task_id: X.id }).eq('id', followers[i].id);
+      if(rf && rf.error) return { error:rf.error.message };
+    }
+    try{ await store.reloadProject(); }catch(e){}
+    return { done:true };
+  }
+
+  document.addEventListener('click', function(e){
+    try{
+      var btn=e.target.closest && e.target.closest('button');
+      if(!btn) return;
+      var label=(btn.getAttribute('title')||'')+' '+(btn.textContent||'');
+      if(!/outdent|quitar\s+sangr/i.test(label)) return;
+      var store=findStore();
+      if(!store) return;                       // sin store -> se deja el comportamiento del app
+      var sel=store.selectedTaskIds;
+      var size = sel && typeof sel.size==='number' ? sel.size : (Array.isArray(sel)?sel.length:0);
+      if(size!==1) return;                      // que el app muestre su aviso
+      e.stopPropagation(); e.preventDefault();
+      fixedOutdent(store).then(function(res){ if(res && res.error) alert('No se pudo quitar la sangr\u00eda: '+res.error); });
+    }catch(err){}
+  }, true);
 
   /* ===================== estilos ===================== */
   function injectStyle() {
