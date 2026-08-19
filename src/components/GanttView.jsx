@@ -384,13 +384,13 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
             ? <div className="empty-state">Sin tareas para mostrar</div>
             : visibleTasks.map((t, i) => {
               const m = t.assigned_to ? members.find(x => x.id === t.assigned_to) : null
-              const indent = t.depth * 14
+              const indent = t.depth * 20
               const isMilestone = t.is_milestone || t.start_date === t.end_date
               const dur = isMilestone ? '0d' : businessDays(t.start_date, t.end_date) + 'dh'
               const preds = predMap[t.id] || []
               const isPinned = pinnedTaskIds.has(t.id)
               const isSelected = selectedIds.has(t.id)
-              const rowCls = `task-row${t._isSummary ? ' row-summary' : ''}${isSelected ? ' row-selected' : ''}`
+              const rowCls = `task-row${t._isSummary ? ' row-summary' : ''}${isSelected ? ' row-selected' : ''}${t.depth > 0 ? ' row-indent-' + Math.min(t.depth, 5) : ''}`
 
               return (
                 <div
@@ -406,8 +406,8 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
                   <div className="cell task-name-cell" onClick={e => { if (editMode) e.stopPropagation() }}>
                     <span className="indent" style={{ width: indent }} />
                     {t.hasChildren
-                      ? <span className="expand-toggle" onClick={e => { e.stopPropagation(); toggleCollapsed(t.id) }}>{t.isCollapsed ? '▸' : '▾'}</span>
-                      : <span className="expand-toggle empty">·</span>
+                      ? <span className="expand-toggle" onClick={e => { e.stopPropagation(); toggleCollapsed(t.id) }}>{t.isCollapsed ? '▶' : '▼'}</span>
+                      : <span className="expand-toggle empty" />
                     }
                     {isMilestone && <span style={{ color: 'var(--accent)', fontSize: 10, marginRight: 2 }}>◆</span>}
                     {editMode
