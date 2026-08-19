@@ -87,6 +87,9 @@ export function Sidebar({ setSearchOpen = () => {} }) {
             <button className={`sidebar-item ${page === 'admin' ? 'active' : ''}`} onClick={() => setPage('admin')}>
               <span className="sidebar-item-icon">⚙️</span>Panel de admin
             </button>
+            <button className={`sidebar-item ${page === 'listas' ? 'active' : ''}`} onClick={() => setPage('listas')}>
+              <span className="sidebar-item-icon">📋</span>Listas
+            </button>
           </>
         )}
       </div>
