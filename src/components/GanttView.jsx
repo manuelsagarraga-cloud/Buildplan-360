@@ -11,7 +11,7 @@ import { InlineText } from './InlineText.jsx'
 
 const DEFAULT_WIDTHS = {
   '#': 26, name: 0, dur: 46, resp: 110, start: 82, end: 82,
-  pred: 72, pct: 36, nivel: 110, rubro: 100, contratista: 100, pin: 26,
+  pred: 72, pct: 36, nivel: 110, rubro: 100, contratista: 100, pin: 36,
 }
 
 const COL_DEFS = [
@@ -33,7 +33,7 @@ function buildColTemplate(hidden, widths) {
   return COL_DEFS.map(c => {
     if (c.toggle && hidden.has(c.key)) return '0px'
     const w = (widths && widths[c.key] != null) ? widths[c.key] : DEFAULT_WIDTHS[c.key]
-    if (c.key === 'name') return w ? `minmax(${w}px, 1fr)` : '1fr'
+    if (c.key === 'name') return w ? `${w}px` : '1fr'
     if (w) return w + 'px'
     return '1fr'
   }).join(' ')
