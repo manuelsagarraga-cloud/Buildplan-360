@@ -3,6 +3,7 @@ import { useStore } from '../store/index.js'
 import { getVisibleTasks, businessDays, formatDate, isOverdue, addDays, getSuccessorChain, shiftDateStr, diffDays } from '../lib/utils.js'
 import { DEP_TYPE_ABBR, sb } from '../lib/supabase.js'
 import { GanttSvg } from './GanttSvg.jsx'
+import BaselinePanel from './BaselinePanel.jsx'
 import { toast } from './Toast.jsx'
 import { ProjectSummary } from './ProjectSummary.jsx'
 import { ListView, KanbanView } from './TaskViews.jsx'
@@ -98,6 +99,7 @@ export function GanttView() {
   )
   const [colMenuOpen, setColMenuOpen] = useState(false)
   const [colWidthOpen, setColWidthOpen] = useState(false)
+  const [baselineOpen, setBaselineOpen] = useState(false)
   const [colWidths, setColWidths] = useState(DEFAULT_WIDTHS)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [leftPaneW, setLeftPaneW] = useState(640)
@@ -310,6 +312,7 @@ export function GanttView() {
           <div className="col-toggle">
             <button className="btn" onClick={() => setColMenuOpen(v => !v)}>☰ Columnas</button>
             <button className="btn" onClick={() => setColWidthOpen(true)} title="Configurar ancho de columnas">⚙ Ancho</button>
+            <button className="btn" onClick={() => setBaselineOpen(true)} title="Línea base del proyecto">📊 Línea base</button>
             <button
               className={`btn ${ganttHidden ? 'btn-active' : ''}`}
               onClick={() => setGanttHidden(v => !v)}
@@ -403,6 +406,9 @@ export function GanttView() {
       </div>
       {colWidthOpen && (
         <ColWidthPanel widths={colWidths} onSave={saveColWidths} onClose={() => setColWidthOpen(false)} />
+      )}
+      {baselineOpen && (
+        <BaselinePanel onClose={() => setBaselineOpen(false)} />
       )}
     </div>
   )
