@@ -23,6 +23,10 @@ export const useStore = create((set, get) => ({
   activeTab: 'gantt',
   filters: { status: '', assignee: '' },
 
+  // ─── Historial de deshacer (cambios de fechas) ──────────────
+  // Cada entrada: { label, changes: [{ id, start_date, end_date }] } con los valores PREVIOS
+  undoStack: [],
+
   // ─── Modal ──────────────────────────────────────────────────
   taskModal: { open: false, task: null },
   projectModal: { open: false },
@@ -33,6 +37,30 @@ export const useStore = create((set, get) => ({
   setPage: (page) => set({ page }),
   toggleSidebar: () => set(s => ({ sidebarOpen: !s.sidebarOpen })),
   setEditMode: (v) => set({ editMode: v }),
+
+  // Guarda un snapshot de los valores PREVIOS antes de un cambio de fechas.
+  // changes: array de { id, start_date, end_date } con los valores de ANTES.
+  pushUndo: (label, changes) => set(s => ({
+    undoStack: [{ label, changes, ts: Date.now() }, ...s.undoStack].slice(0, 20)
+  })),
+
+  // Revierte la última operación de fechas.
+  undo: async () => {
+    const { undoStack, currentProject, loadProject } = get()
+    if (undoStack.length === 0) return null
+    const [last, ...rest] = undoStack
+    try {
+      await Promise.all(last.changes.map(c =>
+        sb.from('tasks').update({ start_date: c.start_date, end_date: c.end_date }).eq('id', c.id)
+      ))
+      set({ undoStack: rest })
+      if (currentProject) await loadProject(currentProject.id)
+      return last.label
+    } catch (e) {
+      console.error('Error al deshacer:', e)
+      return null
+    }
+  },
   setViewMode: (v) => set({ viewMode: v }),
   setActiveTab: (v) => set({ activeTab: v }),
   setFilters: (f) => set(s => ({ filters: { ...s.filters, ...f } })),
@@ -63,13 +91,23 @@ export const useStore = create((set, get) => ({
   // ─── Init ───────────────────────────────────────────────────
   init: async () => {
     try {
-      const [mRes, pRes] = await Promise.all([
+      const [mRes, pRes, fRes] = await Promise.all([
         sb.from('members').select('*').eq('active', true).order('name'),
         sb.from('projects').select('*').order('start_date'),
+        // Frescura: última tarea actualizada por proyecto
+        sb.from('tasks').select('project_id, updated_at').order('updated_at', { ascending: false }),
       ])
       if (mRes.error) throw mRes.error
       if (pRes.error) throw pRes.error
-      set({ members: mRes.data || [], projects: pRes.data || [], connected: true })
+
+      // Mapa project_id -> updated_at más reciente
+      const freshMap = {}
+      for (const row of (fRes.data || [])) {
+        if (!freshMap[row.project_id]) freshMap[row.project_id] = row.updated_at
+      }
+      const projects = (pRes.data || []).map(p => ({ ...p, last_activity: freshMap[p.id] || null }))
+
+      set({ members: mRes.data || [], projects, connected: true })
     } catch (e) {
       console.error(e)
       set({ connected: false })
