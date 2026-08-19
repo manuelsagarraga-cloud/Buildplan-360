@@ -444,8 +444,22 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
                       )}
                     </div>
                   )}
-                  {!hiddenCols.has('start') && <div className="cell"><span className="date" style={{ fontSize: 10 }}>{formatDate(t.start_date)}</span></div>}
-                  {!hiddenCols.has('end') && <div className="cell"><span className={`date ${isOverdue(t) ? 'overdue' : ''}`} style={{ fontSize: 10 }}>{formatDate(t.end_date)}</span></div>}
+                  {!hiddenCols.has('start') && (
+                    <div className="cell" onClick={e => e.stopPropagation()}>
+                      {editMode
+                        ? <input type="date" className="inline-date" value={t.start_date || ''} disabled={saving[t.id]}
+                            onChange={e => quickSave(t.id, 'start_date', e.target.value)} />
+                        : <span className="date" style={{ fontSize: 10 }}>{formatDate(t.start_date)}</span>}
+                    </div>
+                  )}
+                  {!hiddenCols.has('end') && (
+                    <div className="cell" onClick={e => e.stopPropagation()}>
+                      {editMode
+                        ? <input type="date" className="inline-date" value={t.end_date || ''} disabled={saving[t.id]}
+                            onChange={e => quickSave(t.id, 'end_date', e.target.value)} />
+                        : <span className={`date ${isOverdue(t) ? 'overdue' : ''}`} style={{ fontSize: 10 }}>{formatDate(t.end_date)}</span>}
+                    </div>
+                  )}
                   {!hiddenCols.has('pred') && <div className="cell" style={{ fontSize: 9, color: 'var(--info)', fontFamily: 'JetBrains Mono, monospace' }} title={preds.join('; ')}>{preds.join(';') || '—'}</div>}
                   {!hiddenCols.has('pct') && (
                     <div className="cell" style={{ justifyContent: 'center' }} onClick={e => e.stopPropagation()}>
