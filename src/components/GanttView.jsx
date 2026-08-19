@@ -417,19 +417,40 @@ export function GanttView() {
 // ── Gantt split view ─────────────────────────────────────────
 function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, leftPaneW, startResize, colTpl, leftBodyRef, rightBodyRef, hiddenCols, ganttHidden }) {
   const { members, toggleCollapsed, togglePinned, pinnedTaskIds, editMode, tasks, deps, viewMode, currentProject, openTaskModal, loadProject } = useStore()
-  const [saving, setSaving] = useState({}) // { [taskId]: true } mientras guarda
+  const [saving, setSaving] = useState({}) // { [taskId]: 'saving' | 'ok' | 'error' }
 
-  // Guardar un campo único sin abrir el modal
+  // Guardar un campo único: feedback visual, timeout, sin recarga completa
   async function quickSave(taskId, field, value) {
-    setSaving(s => ({ ...s, [taskId]: true }))
+    setSaving(s => ({ ...s, [taskId]: 'saving' }))
     try {
       const v = value === '' ? null : value
-      await sb.from('tasks').update({ [field]: v }).eq('id', taskId)
-      await loadProject(currentProject.id)
+
+      // Timeout de seguridad (8 segundos)
+      const savePromise = sb.from('tasks').update({ [field]: v }).eq('id', taskId)
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Timeout: la conexión tardó demasiado')), 8000)
+      )
+      const { error } = await Promise.race([savePromise, timeoutPromise])
+
+      if (error) {
+        toast('No se pudo guardar: ' + error.message, 'error')
+        setSaving(s => ({ ...s, [taskId]: 'error' }))
+        setTimeout(() => setSaving(s => { const n = { ...s }; delete n[taskId]; return n }), 3000)
+        return
+      }
+
+      // Actualización optimista (sin recargar todo el proyecto)
+      useStore.setState(s => ({
+        tasks: s.tasks.map(t => t.id === taskId ? { ...t, [field]: v } : t)
+      }))
+
+      setSaving(s => ({ ...s, [taskId]: 'ok' }))
+      setTimeout(() => setSaving(s => { const n = { ...s }; delete n[taskId]; return n }), 1200)
     } catch (e) {
       console.error('quickSave error', e)
-    } finally {
-      setSaving(s => { const n = { ...s }; delete n[taskId]; return n })
+      toast('Error al guardar: ' + (e.message || 'Error desconocido'), 'error')
+      setSaving(s => ({ ...s, [taskId]: 'error' }))
+      setTimeout(() => setSaving(s => { const n = { ...s }; delete n[taskId]; return n }), 3000)
     }
   }
 
@@ -481,7 +502,10 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
                 >
                   <div className="cell" style={{ justifyContent: 'center', color: 'var(--text-3)', fontSize: 10 }}>
                     <input type="checkbox" checked={isSelected} onChange={e => toggleSelect(t.id, e)} onClick={e => e.stopPropagation()} style={{ marginRight: 2, accentColor: 'var(--brand)' }} />
-                    {i + 1}
+                    {saving[t.id] === 'saving' ? <span className="save-indicator save-spin" title="Guardando…">⏳</span>
+                      : saving[t.id] === 'ok' ? <span className="save-indicator save-ok" title="Guardado">✓</span>
+                      : saving[t.id] === 'error' ? <span className="save-indicator save-err" title="Error al guardar">✗</span>
+                      : (i + 1)}
                   </div>
                   <div className="cell task-name-cell" onClick={e => { if (editMode) e.stopPropagation() }}>
                     <span className="indent" style={{ width: indent }} />
@@ -491,7 +515,7 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
                     }
                     {isMilestone && <span style={{ color: 'var(--accent)', fontSize: 10, marginRight: 2 }}>◆</span>}
                     {editMode
-                      ? <InlineText value={t.name || ''} onSave={v => quickSave(t.id, 'name', v)} disabled={saving[t.id]} placeholder="(sin nombre)" />
+                      ? <InlineText value={t.name || ''} onSave={v => quickSave(t.id, 'name', v)} disabled={saving[t.id] === 'saving'} placeholder="(sin nombre)" />
                       : <span className="task-name-text" title={t.name}>{t.name}</span>}
                     <button
                       type="button"
@@ -508,7 +532,7 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
                         <select
                           className="inline-select"
                           value={t.assigned_to || ''}
-                          disabled={saving[t.id]}
+                          disabled={saving[t.id] === 'saving'}
                           onChange={e => quickSave(t.id, 'assigned_to', e.target.value)}
                           title="Cambiar responsable"
                         >
@@ -527,7 +551,7 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
                   {!hiddenCols.has('start') && (
                     <div className="cell" onClick={e => e.stopPropagation()}>
                       {editMode
-                        ? <input type="date" className="inline-date" value={t.start_date || ''} disabled={saving[t.id]}
+                        ? <input type="date" className="inline-date" value={t.start_date || ''} disabled={saving[t.id] === 'saving'}
                             onChange={e => quickSave(t.id, 'start_date', e.target.value)} />
                         : <span className="date" style={{ fontSize: 10 }}>{formatDate(t.start_date)}</span>}
                     </div>
@@ -535,7 +559,7 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
                   {!hiddenCols.has('end') && (
                     <div className="cell" onClick={e => e.stopPropagation()}>
                       {editMode
-                        ? <input type="date" className="inline-date" value={t.end_date || ''} disabled={saving[t.id]}
+                        ? <input type="date" className="inline-date" value={t.end_date || ''} disabled={saving[t.id] === 'saving'}
                             onChange={e => quickSave(t.id, 'end_date', e.target.value)} />
                         : <span className={`date ${isOverdue(t) ? 'overdue' : ''}`} style={{ fontSize: 10 }}>{formatDate(t.end_date)}</span>}
                     </div>
@@ -548,7 +572,7 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
                           type="number" min="0" max="100"
                           className="inline-pct"
                           value={t.progress || 0}
-                          disabled={saving[t.id]}
+                          disabled={saving[t.id] === 'saving'}
                           onChange={e => {
                             const v = Math.min(100, Math.max(0, parseInt(e.target.value) || 0))
                             quickSave(t.id, 'progress', v)
@@ -564,7 +588,7 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
                   {!hiddenCols.has('nivel') && (
                     <div className="cell" onClick={e => e.stopPropagation()}>
                       {editMode ? (
-                        <select className="inline-select" value={t.nivel || ''} disabled={saving[t.id]} onChange={e => quickSave(t.id, 'nivel', e.target.value)}>
+                        <select className="inline-select" value={t.nivel || ''} disabled={saving[t.id] === 'saving'} onChange={e => quickSave(t.id, 'nivel', e.target.value)}>
                           <option value="">—</option>
                           {['Subsuelo 2','Subsuelo 1','Planta Baja','Primer Piso','Segundo Piso','Tercer Piso','Cubierta','Terreno','General'].map(n => <option key={n}>{n}</option>)}
                         </select>
@@ -574,14 +598,14 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
                   {!hiddenCols.has('rubro') && (
                     <div className="cell" onClick={e => e.stopPropagation()}>
                       {editMode
-                        ? <InlineText value={t.rubro || ''} onSave={v => quickSave(t.id, 'rubro', v)} disabled={saving[t.id]} />
+                        ? <InlineText value={t.rubro || ''} onSave={v => quickSave(t.id, 'rubro', v)} disabled={saving[t.id] === 'saving'} />
                         : <span style={{ fontSize: 10, color: 'var(--text-2)' }}>{t.rubro || '—'}</span>}
                     </div>
                   )}
                   {!hiddenCols.has('contratista') && (
                     <div className="cell" onClick={e => e.stopPropagation()}>
                       {editMode
-                        ? <InlineText value={t.contratista || ''} onSave={v => quickSave(t.id, 'contratista', v)} disabled={saving[t.id]} />
+                        ? <InlineText value={t.contratista || ''} onSave={v => quickSave(t.id, 'contratista', v)} disabled={saving[t.id] === 'saving'} />
                         : <span style={{ fontSize: 10, color: 'var(--text-2)' }}>{t.contratista || '—'}</span>}
                     </div>
                   )}
