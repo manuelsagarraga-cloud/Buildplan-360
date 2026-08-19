@@ -32,6 +32,7 @@ function buildColTemplate(hidden, widths) {
   return COL_DEFS.map(c => {
     if (c.toggle && hidden.has(c.key)) return '0px'
     const w = (widths && widths[c.key] != null) ? widths[c.key] : DEFAULT_WIDTHS[c.key]
+    if (c.key === 'name') return w ? `minmax(${w}px, 1fr)` : '1fr'
     if (w) return w + 'px'
     return '1fr'
   }).join(' ')
@@ -41,7 +42,7 @@ function buildColTemplate(hidden, widths) {
 function ColWidthPanel({ widths, onSave, onClose }) {
   const [draft, setDraft] = useState({ ...DEFAULT_WIDTHS, ...widths })
   const [busy, setBusy] = useState(false)
-  const editable = COL_DEFS.filter(c => c.key !== '#' && c.key !== 'pin' && c.key !== 'name')
+  const editable = COL_DEFS.filter(c => c.key !== '#')
   return (
     <div className="col-width-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="col-width-panel">
