@@ -18,6 +18,7 @@ import { TrashPage } from './pages/TrashPage.jsx'
 import { BoardPage } from './pages/BoardPage.jsx'
 import { HolidaysPage } from './pages/HolidaysPage.jsx'
 import { AdminPage } from './pages/AdminPage.jsx'
+import { ListasPage } from './pages/ListasPage.jsx'
 import { OfflineBanner } from './components/OfflineBanner.jsx'
 import { MobileApp } from './components/MobileApp.jsx'
 
@@ -142,6 +143,7 @@ export default function App() {
           {page === 'board' && <BoardPage />}
           {page === 'holidays' && <HolidaysPage />}
           {page === 'admin' && <AdminPage />}
+          {page === 'listas' && <ListasPage />}
         </main>
       </div>
 
