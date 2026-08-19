@@ -651,3 +651,32 @@ textarea.form-control{resize:vertical;min-height:68px;line-height:1.5}
   font-family: 'JetBrains Mono', monospace;
 }
 .inline-date:focus { border-color: var(--brand); }
+
+/* ── Sangría visual: línea guía por nivel + flechas más visibles ── */
+.task-name-cell .expand-toggle {
+  font-size: 14px; width: 18px; text-align: center; cursor: pointer;
+  flex-shrink: 0; user-select: none; line-height: 1;
+}
+.task-name-cell .expand-toggle.empty {
+  width: 18px; visibility: hidden;
+}
+.row-indent-1 .task-name-cell,
+.row-indent-2 .task-name-cell,
+.row-indent-3 .task-name-cell,
+.row-indent-4 .task-name-cell,
+.row-indent-5 .task-name-cell {
+  border-left: 2px solid var(--border);
+}
+.row-indent-2 .task-name-cell { border-left-color: rgba(0,0,0,.12); }
+.row-indent-3 .task-name-cell { border-left-color: rgba(0,0,0,.08); }
+.row-indent-4 .task-name-cell,
+.row-indent-5 .task-name-cell { border-left-color: rgba(0,0,0,.05); }
+
+/* ── Botón ✎ (solo uno, de la fuente) ── */
+.row-open-btn {
+  margin-left: auto; flex: 0 0 auto; border: none; background: transparent;
+  cursor: pointer; font-size: 13px; line-height: 1; padding: 0 4px;
+  color: var(--text-3); opacity: 0; transition: opacity .15s;
+}
+.task-row:hover .row-open-btn { opacity: .7; }
+.row-open-btn:hover { opacity: 1; color: var(--brand); }
