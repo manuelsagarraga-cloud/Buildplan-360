@@ -1,30 +1,19 @@
 /**
- * Pipeline360 v2 — p360-clicks-v1.js  (v1.3)
+ * Pipeline360 v2 — p360-clicks-v1.js  (v2.0 — solo Línea Base)
  *
- *  A) Clic en la grilla:
- *     · Clic simple en una fila → SELECCIONAR (marca el checkbox). No abre la ficha.
- *     · ✎ (Modo Edición) → ABRIR la ficha completa.
- *     · Doble clic en el NOMBRE (Modo Edición) → editarlo inline (Enter guarda, Esc cancela).
- *  C) OUTDENT estilo Project: al quitar sangría a X, X sube un nivel y las tareas
- *     hermanas que venían DESPUÉS pasan a ser hijas de X (adopción), como en MS Project.
- *  B) LÍNEA BASE: botón flotante "📊 Línea base" que abre un panel para
- *     · CREAR una línea base del proyecto abierto (usa la función create_baseline).
- *     · VER la variación vs la última línea base: "Su plan lleva un retraso de X días"
- *       + detalle por tarea (Fin previsto vs Fin actual = Variación de fin).
- *
- *  Parche defensivo (todo en try/catch). Usa el cliente Supabase en window._p360sb.
- *  El ID de tarea sale del key del fiber de React (la fila se rendea con key = task.id).
+ *  Panel "📊 Línea base": crear línea base del proyecto y ver variación.
+ *  El manejo de clic, ✎ y edición inline ya están en la fuente (GanttView.jsx).
  */
 (function () {
   'use strict';
   if (window._p360clicks1) return;
   window._p360clicks1 = true;
 
-  var OPEN = 'p360-open-btn';
-  var bypass = false;
   var raf = window.requestAnimationFrame ? window.requestAnimationFrame.bind(window) : function (f) { return setTimeout(f, 50); };
-  function editModeOn() { return !!document.querySelector('.assignee-cell select, .inline-select, .inline-pct'); }
-  var PASS = 'input, select, textarea, a, button, .expand-toggle, .assignee-cell, .inline-select, .inline-pct, .' + OPEN;
+
+  /* ===================== LÍNEA BASE ===================== */
+  function fmt(d) { if (!d) return '—'; var p = String(d).slice(0, 10).split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : d; }
+  function diffDays(a, b) { if (!a || !b) return null; var x = new Date(a), y = new Date(b); return Math.round((x - y) / 86400000); }
 
   function taskIdOf(row) {
     try {
@@ -34,97 +23,12 @@
     } catch (e) { return null; }
   }
 
-  /* ===================== A) CLIC EN LA GRILLA ===================== */
-  document.addEventListener('click', function (e) {
-    try {
-      var t = e.target; if (!t || !t.closest) return;
-      var btn = t.closest('.' + OPEN);
-      if (btn) {
-        e.stopPropagation();
-        var r0 = btn.closest('.task-row');
-        if (r0) { bypass = true; r0.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); }
-        return;
-      }
-      var row = t.closest('.task-row'); if (!row) return;
-      if (bypass) { bypass = false; return; }
-      if (t.closest('.p360-name-input')) return;
-      if (t.closest(PASS)) return;
-      e.stopPropagation();
-      var cb = row.querySelector('input[type="checkbox"]');
-      if (cb) cb.click();
-    } catch (err) {}
-  }, true);
-
-  document.addEventListener('dblclick', function (e) {
-    try {
-      var span = e.target.closest && e.target.closest('.task-name-text');
-      if (!span) return;
-      e.stopPropagation(); e.preventDefault();
-      startNameEdit(span);
-    } catch (err) {}
-  }, true);
-
-  function startNameEdit(span) {
-    if (!editModeOn()) return;
-    var cell = span.closest('.task-name-cell'), row = span.closest('.task-row');
-    if (!cell || !row || cell.querySelector('.p360-name-input')) return;
-    var id = taskIdOf(row);
-    if (id == null || !window._p360sb) return;
-    var current = span.textContent || '';
-    var input = document.createElement('input');
-    input.type = 'text'; input.className = 'p360-name-input'; input.value = current;
-    span.style.display = 'none';
-    span.parentNode.insertBefore(input, span.nextSibling);
-    input.focus(); input.select();
-    var done = false;
-    function finish(save) {
-      if (done) return; done = true;
-      var val = (input.value || '').trim();
-      if (input.parentNode) input.parentNode.removeChild(input);
-      span.style.display = '';
-      if (save && val && val !== current) {
-        span.textContent = val;
-        try {
-          window._p360sb.from('tasks').update({ name: val }).eq('id', id).then(function (res) {
-            if (res && res.error) { span.textContent = current; console.warn('[p360] no se pudo guardar el nombre:', res.error.message); }
-          });
-        } catch (err) { span.textContent = current; }
-      }
-    }
-    input.addEventListener('keydown', function (ev) {
-      if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
-      else if (ev.key === 'Escape') { ev.preventDefault(); finish(false); }
-    });
-    input.addEventListener('blur', function () { finish(true); });
-    input.addEventListener('click', function (ev) { ev.stopPropagation(); });
-    input.addEventListener('dblclick', function (ev) { ev.stopPropagation(); });
-  }
-
   var pending = false;
-  function scheduleSync() { if (pending) return; pending = true; raf(function () { pending = false; syncButtons(); }); }
-  function syncButtons() {
-    try {
-      var on = editModeOn();
-      var cells = document.querySelectorAll('.task-name-cell');
-      for (var i = 0; i < cells.length; i++) {
-        var cell = cells[i], has = cell.querySelector('.' + OPEN);
-        if (on && !has) {
-          var b = document.createElement('button');
-          b.type = 'button'; b.className = OPEN; b.title = 'Abrir ficha de la tarea'; b.textContent = '✎';
-          cell.appendChild(b);
-        } else if (!on && has) { has.remove(); }
-      }
-      ensureBaselineBtn();
-    } catch (err) {}
-  }
-
-  /* ===================== B) LÍNEA BASE ===================== */
-  function fmt(d) { if (!d) return '—'; var p = String(d).slice(0, 10).split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : d; }
-  function diffDays(a, b) { if (!a || !b) return null; var x = new Date(a), y = new Date(b); return Math.round((x - y) / 86400000); }
+  function scheduleSync() { if (pending) return; pending = true; raf(function () { pending = false; ensureBaselineBtn(); }); }
 
   function ensureBaselineBtn() {
     if (document.getElementById('p360-bl-btn')) return;
-    if (!document.querySelector('.task-row')) return;         // solo con un proyecto abierto
+    if (!document.querySelector('.task-row')) return;
     var b = document.createElement('button');
     b.id = 'p360-bl-btn'; b.type = 'button'; b.textContent = '📊 Línea base';
     b.addEventListener('click', openBaselinePanel);
@@ -212,90 +116,17 @@
     try {
       var res = await window._p360sb.rpc('create_baseline', { p_project_id: pid, p_name: name || ('Línea base ' + n) });
       if (res && res.error) { body.innerHTML = 'No se pudo crear: ' + res.error.message; return; }
-      openBaselinePanel();   // recargar
+      openBaselinePanel();
     } catch (err) { body.innerHTML = 'Error creando la línea base: ' + err; }
   }
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
 
-
-  /* ===================== C) OUTDENT ESTILO PROJECT ===================== */
-  function isStore(o){ return o && typeof o==='object' && typeof o.reloadProject==='function' && Array.isArray(o.tasks); }
-  function findStore(){
-    try{
-      var starts=[]; var tr=document.querySelector('.task-row'); if(tr) starts.push(tr);
-      document.querySelectorAll('button.btn').forEach(function(b){ starts.push(b); });
-      var root=document.getElementById('root'); if(root) starts.push(root);
-      for(var n=0;n<starts.length;n++){
-        var el=starts[n];
-        var key=Object.keys(el).find(function(k){ return k.indexOf('__reactFiber$')===0 || k.indexOf('__reactInternalInstance$')===0; });
-        var f=key?el[key]:null, guard=0;
-        while(f && guard<300){
-          var hook=f.memoizedState, g2=0;
-          while(hook && g2<100){
-            var st=hook.memoizedState;
-            if(isStore(st)) return st;
-            if(st && typeof st==='object'){ for(var kk in st){ try{ if(isStore(st[kk])) return st[kk]; }catch(_){} } }
-            hook=hook.next; g2++;
-          }
-          f=f.return; guard++;
-        }
-      }
-    }catch(e){}
-    return null;
-  }
-
-  async function fixedOutdent(store){
-    var sel=store.selectedTaskIds;
-    var ids = sel && typeof sel.forEach==='function' ? Array.from(sel) : (Array.isArray(sel)?sel:[]);
-    if(ids.length!==1) return { skip:true };
-    var X=store.tasks.find(function(t){ return t.id===ids[0]; });
-    if(!X || !X.parent_task_id) return { done:false };
-    var oldParent=X.parent_task_id;
-    var parent=store.tasks.find(function(t){ return t.id===oldParent; });
-    var grandparent=parent?(parent.parent_task_id||null):null;
-    var sibs=store.tasks.filter(function(t){ return (t.parent_task_id||null)===(oldParent||null); })
-                        .sort(function(a,b){ return (a.order_index||0)-(b.order_index||0); });
-    var xi=sibs.findIndex(function(t){ return t.id===X.id; });
-    var followers=sibs.slice(xi+1);
-    if(followers.length){
-      if(!window.confirm('Quitar sangría de \u00ab'+(X.name||'')+'\u00bb: sube un nivel y las '+followers.length+' tarea(s) siguientes pasan a ser sus hijas (como en Project). \u00bfContinuar?')) return { done:false };
-    }
-    var sb=window._p360sb; if(!sb) return { error:'sin cliente de datos' };
-    var r1=await sb.from('tasks').update({ parent_task_id: grandparent }).eq('id', X.id);
-    if(r1 && r1.error) return { error:r1.error.message };
-    for(var i=0;i<followers.length;i++){
-      var rf=await sb.from('tasks').update({ parent_task_id: X.id }).eq('id', followers[i].id);
-      if(rf && rf.error) return { error:rf.error.message };
-    }
-    try{ await store.reloadProject(); }catch(e){}
-    return { done:true };
-  }
-
-  document.addEventListener('click', function(e){
-    try{
-      var btn=e.target.closest && e.target.closest('button');
-      if(!btn) return;
-      var label=(btn.getAttribute('title')||'')+' '+(btn.textContent||'');
-      if(!/outdent|quitar\s+sangr/i.test(label)) return;
-      var store=findStore();
-      if(!store) return;                       // sin store -> se deja el comportamiento del app
-      var sel=store.selectedTaskIds;
-      var size = sel && typeof sel.size==='number' ? sel.size : (Array.isArray(sel)?sel.length:0);
-      if(size!==1) return;                      // que el app muestre su aviso
-      e.stopPropagation(); e.preventDefault();
-      fixedOutdent(store).then(function(res){ if(res && res.error) alert('No se pudo quitar la sangr\u00eda: '+res.error); });
-    }catch(err){}
-  }, true);
-
   /* ===================== estilos ===================== */
   function injectStyle() {
-    if (document.getElementById('p360-clicks1-style')) return;
-    var s = document.createElement('style'); s.id = 'p360-clicks1-style';
+    if (document.getElementById('p360-bl-style')) return;
+    var s = document.createElement('style'); s.id = 'p360-bl-style';
     s.textContent =
-      '.' + OPEN + '{margin-left:auto;flex:0 0 auto;border:none;background:transparent;cursor:pointer;font-size:12px;line-height:1;padding:0 4px;color:var(--text-3);opacity:.55;}' +
-      '.' + OPEN + ':hover{opacity:1;color:var(--brand);}.task-row:hover .' + OPEN + '{opacity:.85;}' +
-      '.p360-name-input{flex:1;min-width:0;font:inherit;color:inherit;background:var(--surface-1,#fff);border:1px solid var(--brand,#f60);border-radius:4px;padding:1px 5px;outline:none;}' +
       '#p360-bl-btn{position:fixed;right:18px;bottom:18px;z-index:9998;background:var(--brand,#f60);color:#fff;border:none;border-radius:22px;padding:10px 16px;font:600 13px system-ui,sans-serif;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.2);}' +
       '#p360-bl-btn:hover{filter:brightness(1.05);}' +
       '#p360-bl-ov{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.35);display:flex;justify-content:flex-end;}' +
@@ -317,7 +148,7 @@
   }
 
   function init() {
-    injectStyle(); syncButtons();
+    injectStyle(); ensureBaselineBtn();
     try { new MutationObserver(scheduleSync).observe(document.getElementById('root') || document.body, { childList: true, subtree: true }); } catch (err) {}
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
