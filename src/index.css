@@ -680,3 +680,39 @@ textarea.form-control{resize:vertical;min-height:68px;line-height:1.5}
 }
 .task-row:hover .row-open-btn { opacity: .7; }
 .row-open-btn:hover { opacity: 1; color: var(--brand); }
+
+/* ── Panel de ancho de columnas ── */
+.col-width-overlay {
+  position: fixed; inset: 0; z-index: 9990;
+  background: rgba(0,0,0,.3); display: flex; justify-content: center; align-items: center;
+}
+.col-width-panel {
+  background: var(--surface-0, #fff); border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.18); width: 340px; max-width: 92vw;
+  max-height: 80vh; display: flex; flex-direction: column;
+  font: 14px system-ui, sans-serif; color: var(--text-1);
+}
+.col-width-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 18px; font-weight: 700; font-size: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.col-width-close { cursor: pointer; font-size: 20px; color: var(--text-3); }
+.col-width-body { padding: 12px 18px; overflow: auto; flex: 1; }
+.col-width-row {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+}
+.col-width-row label {
+  flex: 1; font-size: 13px; color: var(--text-2);
+}
+.col-width-row input {
+  width: 70px; text-align: center; font: inherit; font-size: 13px;
+  border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px;
+  background: var(--surface-1, #fafafa);
+}
+.col-width-row input:focus { border-color: var(--brand); outline: none; }
+.col-width-px { font-size: 11px; color: var(--text-3); }
+.col-width-footer {
+  display: flex; justify-content: space-between; padding: 12px 18px;
+  border-top: 1px solid var(--border);
+}
