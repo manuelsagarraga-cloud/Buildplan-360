@@ -8,27 +8,79 @@ import { ProjectSummary } from './ProjectSummary.jsx'
 import { ListView, KanbanView } from './TaskViews.jsx'
 import { InlineText } from './InlineText.jsx'
 
+const DEFAULT_WIDTHS = {
+  '#': 26, name: 0, dur: 46, resp: 110, start: 82, end: 82,
+  pred: 72, pct: 36, nivel: 110, rubro: 100, contratista: 100, pin: 26,
+}
+
 const COL_DEFS = [
-  { key: '#',           label: '#',           w: 26,  toggle: false },
-  { key: 'name',        label: 'Tarea',        w: null, toggle: false },
-  { key: 'dur',         label: 'Dur',          w: 46,  toggle: true },
-  { key: 'resp',        label: 'Responsable',  w: 110, toggle: true },
-  { key: 'start',       label: 'Inicio',       w: 64,  toggle: true },
-  { key: 'end',         label: 'Fin',          w: 64,  toggle: true },
-  { key: 'pred',        label: 'Pred',         w: 72,  toggle: true },
-  { key: 'pct',         label: '%',            w: 36,  toggle: true },
-  { key: 'nivel',       label: 'Nivel',        w: 110, toggle: true, hidden: true },
-  { key: 'rubro',       label: 'Rubro',        w: 100, toggle: true, hidden: true },
-  { key: 'contratista', label: 'Contratista',  w: 100, toggle: true, hidden: true },
-  { key: 'pin',         label: '📌',           w: 26,  toggle: false },
+  { key: '#',           label: '#',           toggle: false },
+  { key: 'name',        label: 'Tarea',        toggle: false },
+  { key: 'dur',         label: 'Duración',     toggle: true },
+  { key: 'resp',        label: 'Responsable',  toggle: true },
+  { key: 'start',       label: 'Inicio',       toggle: true },
+  { key: 'end',         label: 'Fin',          toggle: true },
+  { key: 'pred',        label: 'Predecesoras', toggle: true },
+  { key: 'pct',         label: '%',            toggle: true },
+  { key: 'nivel',       label: 'Nivel',        toggle: true, hidden: true },
+  { key: 'rubro',       label: 'Rubro',        toggle: true, hidden: true },
+  { key: 'contratista', label: 'Contratista',  toggle: true, hidden: true },
+  { key: 'pin',         label: '📌',           toggle: false },
 ]
 
-function buildColTemplate(hidden) {
+function buildColTemplate(hidden, widths) {
   return COL_DEFS.map(c => {
     if (c.toggle && hidden.has(c.key)) return '0px'
-    if (c.w) return c.w + 'px'
+    const w = (widths && widths[c.key] != null) ? widths[c.key] : DEFAULT_WIDTHS[c.key]
+    if (w) return w + 'px'
     return '1fr'
   }).join(' ')
+}
+
+// Panel de configuración de anchos de columna
+function ColWidthPanel({ widths, onSave, onClose }) {
+  const [draft, setDraft] = useState({ ...DEFAULT_WIDTHS, ...widths })
+  const [busy, setBusy] = useState(false)
+  const editable = COL_DEFS.filter(c => c.key !== '#' && c.key !== 'pin' && c.key !== 'name')
+  return (
+    <div className="col-width-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="col-width-panel">
+        <div className="col-width-header">
+          <span>⚙ Ancho de columnas</span>
+          <span className="col-width-close" onClick={onClose}>&times;</span>
+        </div>
+        <div className="col-width-body">
+          <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 10px' }}>
+            Ajustá el ancho en píxeles. Se guarda para todos los usuarios.
+          </p>
+          {editable.map(c => (
+            <div key={c.key} className="col-width-row">
+              <label>{c.label}</label>
+              <input
+                type="number" min="30" max="400" step="5"
+                value={draft[c.key] || ''}
+                onChange={e => setDraft(d => ({ ...d, [c.key]: parseInt(e.target.value) || 0 }))}
+              />
+              <span className="col-width-px">px</span>
+            </div>
+          ))}
+        </div>
+        <div className="col-width-footer">
+          <button className="btn btn-ghost" disabled={busy} onClick={() => { setDraft({ ...DEFAULT_WIDTHS }); }}>
+            Restaurar valores
+          </button>
+          <button className="btn btn-primary" disabled={busy} onClick={async () => {
+            setBusy(true)
+            await onSave(draft)
+            setBusy(false)
+            onClose()
+          }}>
+            {busy ? 'Guardando…' : 'Guardar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export function GanttView() {
@@ -44,6 +96,8 @@ export function GanttView() {
     new Set(COL_DEFS.filter(c => c.hidden).map(c => c.key))
   )
   const [colMenuOpen, setColMenuOpen] = useState(false)
+  const [colWidthOpen, setColWidthOpen] = useState(false)
+  const [colWidths, setColWidths] = useState(DEFAULT_WIDTHS)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [leftPaneW, setLeftPaneW] = useState(640)
   const [ganttHidden, setGanttHidden] = useState(false)
@@ -52,6 +106,21 @@ export function GanttView() {
   const headerRef = useRef(null)
   const activeTab = useStore(s => s.activeTab)
   const setActiveTab = useStore(s => s.setActiveTab)
+
+  // Cargar anchos de columna desde system_settings
+  useEffect(() => {
+    sb.from('system_settings').select('value').eq('key', 'column_widths').then(res => {
+      if (res.data && res.data[0] && res.data[0].value) {
+        setColWidths(w => ({ ...w, ...res.data[0].value }))
+      }
+    })
+  }, [])
+
+  async function saveColWidths(newWidths) {
+    setColWidths(newWidths)
+    await sb.from('system_settings').upsert({ key: 'column_widths', value: newWidths })
+    toast('Anchos de columna guardados')
+  }
 
   const visibleTasks = getVisibleTasks(tasks, filters, collapsed)
 
@@ -98,7 +167,7 @@ export function GanttView() {
     document.addEventListener('mouseup', onUp)
   }, [leftPaneW])
 
-  const colTpl = buildColTemplate(hiddenCols)
+  const colTpl = buildColTemplate(hiddenCols, colWidths)
 
   // ── Indent/Outdent/Link ──────────────────────────────────────
   async function handleIndent() {
@@ -239,6 +308,7 @@ export function GanttView() {
         <div className="toolbar-right">
           <div className="col-toggle">
             <button className="btn" onClick={() => setColMenuOpen(v => !v)}>☰ Columnas</button>
+            <button className="btn" onClick={() => setColWidthOpen(true)} title="Configurar ancho de columnas">⚙ Ancho</button>
             <button
               className={`btn ${ganttHidden ? 'btn-active' : ''}`}
               onClick={() => setGanttHidden(v => !v)}
@@ -330,6 +400,9 @@ export function GanttView() {
         {activeTab === 'kanban' && <KanbanView tasks={tasks.filter(t => !filters.assignee || t.assigned_to === filters.assignee)} />}
         {activeTab === 'resumen' && <ProjectSummary />}
       </div>
+      {colWidthOpen && (
+        <ColWidthPanel widths={colWidths} onSave={saveColWidths} onClose={() => setColWidthOpen(false)} />
+      )}
     </div>
   )
 }
