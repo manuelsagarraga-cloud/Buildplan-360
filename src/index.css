@@ -766,3 +766,19 @@ textarea.form-control{resize:vertical;min-height:68px;line-height:1.5}
 .save-err { color: #dc2626; }
 .save-spin { animation: save-pulse .8s ease-in-out infinite; }
 @keyframes save-pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+
+/* ── Listas de administración (Contratistas / Zonas) ── */
+.listas-card {
+  background: var(--surface-0, #fff); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px; margin-top: 8px;
+}
+.listas-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 0; border-bottom: 1px solid var(--border);
+}
+.listas-status { font-size: 10px; flex-shrink: 0; }
+.listas-status.active { color: #16a34a; }
+.listas-status.inactive { color: #aaa; }
+.listas-name { flex: 1; font-size: 14px; }
+.listas-actions { display: flex; gap: 4px; }
+.listas-add { display: flex; gap: 8px; }
