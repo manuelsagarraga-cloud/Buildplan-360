@@ -642,3 +642,12 @@ textarea.form-control{resize:vertical;min-height:68px;line-height:1.5}
 .fresh-tibio  { background: rgba(217,119,6,.12); color: #d97706; }
 .fresh-frio   { background: rgba(220,38,38,.12); color: #dc2626; }
 .fresh-sin_datos { background: var(--border); color: var(--text-3); }
+
+/* ── Fecha inline editable ── */
+.inline-date {
+  width: 100%; font: inherit; font-size: 10px; color: var(--text-1);
+  background: var(--surface-1, #fff); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 3px; outline: none;
+  font-family: 'JetBrains Mono', monospace;
+}
+.inline-date:focus { border-color: var(--brand); }
