@@ -632,3 +632,13 @@ textarea.form-control{resize:vertical;min-height:68px;line-height:1.5}
 .mobile-recent-text { font-size: 13px; color: var(--text-1); }
 .mobile-recent-photos { display: flex; gap: 8px; margin-top: 8px; }
 .mobile-recent-photos img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; }
+
+/* ── Badge de frescura en tarjetas de proyecto ── */
+.freshness-badge {
+  font-size: 10px; font-weight: 700; white-space: nowrap; flex-shrink: 0;
+  padding: 2px 7px; border-radius: 20px; display: inline-flex; align-items: center; gap: 3px;
+}
+.fresh-fresco { background: rgba(22,163,74,.12); color: #16a34a; }
+.fresh-tibio  { background: rgba(217,119,6,.12); color: #d97706; }
+.fresh-frio   { background: rgba(220,38,38,.12); color: #dc2626; }
+.fresh-sin_datos { background: var(--border); color: var(--text-3); }
