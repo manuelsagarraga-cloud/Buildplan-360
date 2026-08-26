@@ -249,7 +249,7 @@ textarea.form-control{resize:vertical;min-height:68px;line-height:1.5}
   border-right:1px solid var(--border);overflow:hidden;
 }
 .left-header>div:last-child{border-right:none}
-.left-body{flex:1;overflow-y:auto;overflow-x:hidden;background:var(--surface)}
+.left-body{flex:1;overflow-y:auto;overflow-x:auto;background:var(--surface)}
 .left-body::-webkit-scrollbar{width:0}
 .right-header-wrap{flex:0 0 auto;height:48px;overflow:hidden;border-bottom:1px solid var(--border);background:var(--surface-2);position:relative}
 .right-body{flex:1;overflow:auto;position:relative;background:var(--surface)}
