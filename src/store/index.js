@@ -163,19 +163,23 @@ export const useStore = create((set, get) => ({
       const ids = new Set(tasks.map(t => t.id))
       console.log('[loadProject] tareas:', tasks.length, 'ids:', ids.size)
 
-      // Cargar dependencias — intentar filtradas primero, fallback a todas
-      let deps = []
-      try {
-        // Traer todas las deps y filtrar por este proyecto
-        const dRes = await sb.from('task_dependencies').select('*').limit(10000)
-        console.log('[loadProject] deps raw:', dRes.data?.length, 'error:', dRes.error?.message || 'ninguno')
-        if (dRes.data) {
-          deps = dRes.data.filter(d => ids.has(d.predecessor_id) && ids.has(d.successor_id))
-        }
-      } catch (depErr) {
-        console.warn('[loadProject] error cargando deps:', depErr)
+      // Cargar TODAS las dependencias paginando (PostgREST corta en 1000 por página)
+      let allDeps = []
+      let page = 0
+      while (true) {
+        const from = page * 1000
+        const to = from + 999
+        const { data, error } = await sb.from('task_dependencies').select('*').range(from, to)
+        if (error) { console.warn('[loadProject] deps page error:', error.message); break }
+        if (!data || data.length === 0) break
+        allDeps.push(...data)
+        console.log('[loadProject] deps página', page, ':', data.length, '(acumulado:', allDeps.length, ')')
+        if (data.length < 1000) break
+        page++
       }
-      console.log('[loadProject] deps filtradas para este proyecto:', deps.length)
+
+      const deps = allDeps.filter(d => ids.has(d.predecessor_id) && ids.has(d.successor_id))
+      console.log('[loadProject] deps total:', allDeps.length, 'de este proyecto:', deps.length)
 
       set({ currentProject: project, tasks, deps, page: 'gantt', collapsed: new Set(), activeTab: 'gantt' })
     } catch (e) {
