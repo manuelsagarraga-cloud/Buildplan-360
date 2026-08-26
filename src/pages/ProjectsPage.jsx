@@ -13,17 +13,10 @@ const STATUS_COLORS = {
 }
 
 export function ProjectsPage() {
-  const { projects, members, loadProject, createProject } = useStore()
+  const { projects, members, loadProject, openProjectModal } = useStore()
 
-  async function handleNewProject() {
-    const name = window.prompt('Nombre del nuevo proyecto:')
-    if (!name || !name.trim()) return
-    try {
-      const proj = await createProject(name.trim())
-      if (proj) loadProject(proj.id)
-    } catch (e) {
-      alert('No se pudo crear el proyecto: ' + e.message)
-    }
+  function handleNewProject() {
+    openProjectModal('create')
   }
 
   // Group by provincia
