@@ -29,7 +29,7 @@ export const useStore = create((set, get) => ({
 
   // ─── Modal ──────────────────────────────────────────────────
   taskModal: { open: false, task: null },
-  projectModal: { open: false },
+  projectModal: { open: false, mode: 'edit' }, // mode: 'edit' | 'create'
   importModal: { open: false },
   resourceModal: { open: false, member: null },
 
@@ -79,8 +79,47 @@ export const useStore = create((set, get) => ({
   openTaskModal: (task = null) => set({ taskModal: { open: true, task } }),
   closeTaskModal: () => set({ taskModal: { open: false, task: null } }),
 
-  openProjectModal: () => set({ projectModal: { open: true } }),
-  closeProjectModal: () => set({ projectModal: { open: false } }),
+  openProjectModal: (mode = 'edit') => set({ projectModal: { open: true, mode } }),
+  closeProjectModal: () => set({ projectModal: { open: false, mode: 'edit' } }),
+
+  // ─── Delete project (mueve a papelera) ──────────────────────
+  deleteProject: async (projectId) => {
+    const { projects } = get()
+    const project = projects.find(p => p.id === projectId)
+    if (!project) return
+
+    // Guardar snapshot en deleted_projects para poder restaurar
+    const tRes = await sb.from('tasks').select('*').eq('project_id', projectId).limit(5000)
+    const dRes = await sb.from('task_dependencies').select('*').limit(10000)
+    const tasks = tRes.data || []
+    const ids = new Set(tasks.map(t => t.id))
+    const deps = (dRes.data || []).filter(d => ids.has(d.predecessor_id) && ids.has(d.successor_id))
+
+    const snapshot = { project, tasks, deps }
+    await sb.from('deleted_projects').insert({
+      original_id: projectId,
+      company_id: project.company_id,
+      snapshot,
+      deleted_by: (await sb.auth.getUser()).data?.user?.id,
+    })
+
+    // Eliminar dependencias, tareas y proyecto
+    for (const d of deps) {
+      await sb.from('task_dependencies').delete().eq('id', d.id)
+    }
+    for (const t of tasks) {
+      await sb.from('tasks').delete().eq('id', t.id)
+    }
+    await sb.from('projects').delete().eq('id', projectId)
+
+    set(s => ({
+      projects: s.projects.filter(p => p.id !== projectId),
+      currentProject: s.currentProject?.id === projectId ? null : s.currentProject,
+      tasks: s.currentProject?.id === projectId ? [] : s.tasks,
+      deps: s.currentProject?.id === projectId ? [] : s.deps,
+      page: s.currentProject?.id === projectId ? 'projects' : s.page,
+    }))
+  },
 
   openImportModal: () => set({ importModal: { open: true } }),
   closeImportModal: () => set({ importModal: { open: false } }),
