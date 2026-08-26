@@ -13,7 +13,18 @@ const STATUS_COLORS = {
 }
 
 export function ProjectsPage() {
-  const { projects, members, loadProject } = useStore()
+  const { projects, members, loadProject, createProject } = useStore()
+
+  async function handleNewProject() {
+    const name = window.prompt('Nombre del nuevo proyecto:')
+    if (!name || !name.trim()) return
+    try {
+      const proj = await createProject(name.trim())
+      if (proj) loadProject(proj.id)
+    } catch (e) {
+      alert('No se pudo crear el proyecto: ' + e.message)
+    }
+  }
 
   // Group by provincia
   const grouped = {}
@@ -30,6 +41,7 @@ export function ProjectsPage() {
         <h1 className="projects-page-title">Centro de Proyectos</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 13, color: 'var(--text-2)' }}>{projects.length} proyectos</span>
+          <button className="btn btn-primary" onClick={handleNewProject}>+ Nuevo proyecto</button>
         </div>
       </div>
 
