@@ -91,17 +91,16 @@ export const useStore = create((set, get) => ({
   // ─── Init ───────────────────────────────────────────────────
   init: async () => {
     try {
-      const [mRes, pRes, fRes] = await Promise.all([
+      const [mRes, pRes] = await Promise.all([
         sb.from('members').select('*').eq('active', true).order('name'),
         sb.from('projects').select('*').order('start_date'),
-        // Frescura: última tarea actualizada por proyecto
-        sb.from('tasks').select('project_id, updated_at').order('updated_at', { ascending: false }),
       ])
       if (mRes.error) throw mRes.error
       if (pRes.error) throw pRes.error
 
-      // Mapa project_id -> updated_at más reciente
-      const freshMap = {}
+      // Frescura: última tarea actualizada por proyecto (con limit alto)
+      let freshMap = {}
+      const fRes = await sb.from('tasks').select('project_id,updated_at').order('updated_at', { ascending: false }).limit(5000)
       for (const row of (fRes.data || [])) {
         if (!freshMap[row.project_id]) freshMap[row.project_id] = row.updated_at
       }
@@ -119,15 +118,15 @@ export const useStore = create((set, get) => ({
     const project = projects.find(p => p.id === projectId)
     if (!project) return
     try {
-      const [tRes, dRes] = await Promise.all([
-        sb.from('tasks').select('*').eq('project_id', projectId).order('order_index'),
-        sb.from('task_dependencies').select('*'),
-      ])
+      const tRes = await sb.from('tasks').select('*').eq('project_id', projectId).order('order_index').limit(5000)
       if (tRes.error) throw tRes.error
-      if (dRes.error) throw dRes.error
       const tasks = tRes.data || []
       const ids = new Set(tasks.map(t => t.id))
+
+      const dRes = await sb.from('task_dependencies').select('*').limit(10000)
+      if (dRes.error) throw dRes.error
       const deps = (dRes.data || []).filter(d => ids.has(d.predecessor_id) && ids.has(d.successor_id))
+
       set({ currentProject: project, tasks, deps, page: 'gantt', collapsed: new Set(), activeTab: 'gantt' })
     } catch (e) {
       console.error(e)
@@ -137,6 +136,21 @@ export const useStore = create((set, get) => ({
   reloadProject: async () => {
     const { currentProject } = get()
     if (currentProject) await get().loadProject(currentProject.id)
+  },
+
+  // ─── Create project ─────────────────────────────────────────
+  createProject: async (name) => {
+    const { data: me } = await sb.rpc('get_my_company_id')
+    if (!me) throw new Error('No se pudo obtener la empresa')
+    const { data, error } = await sb.from('projects').insert({
+      name: name || 'Nuevo proyecto',
+      company_id: me,
+      status: 'planning',
+      start_date: new Date().toISOString().slice(0, 10),
+    }).select().single()
+    if (error) throw error
+    set(s => ({ projects: [...s.projects, { ...data, last_activity: null }] }))
+    return data
   },
 
   // ─── Members CRUD ───────────────────────────────────────────
