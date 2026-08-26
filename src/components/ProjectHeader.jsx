@@ -13,8 +13,17 @@ const STATUS_COLORS = {
 }
 
 export function ProjectHeader() {
-  const { currentProject, members, setPage, editMode, openProjectModal } = useStore()
+  const { currentProject, members, setPage, editMode, openProjectModal, deleteProject } = useStore()
   if (!currentProject) return null
+
+  async function handleDelete() {
+    if (!window.confirm(`¿Eliminar "${currentProject.name}"?\n\nEl proyecto se mueve a la Papelera y se puede restaurar.`)) return
+    try {
+      await deleteProject(currentProject.id)
+    } catch (e) {
+      alert('No se pudo eliminar: ' + e.message)
+    }
+  }
 
   const p = currentProject
   const mgr = p.manager_id ? members.find(m => m.id === p.manager_id) : null
@@ -37,11 +46,14 @@ export function ProjectHeader() {
           </span>
         </div>
         {editMode && (
-          <>
-            <button className="btn" style={{ padding: '4px 10px', fontSize: 11 }} onClick={openProjectModal}>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button className="btn" style={{ padding: '4px 10px', fontSize: 11 }} onClick={() => openProjectModal('edit')}>
               ✏️ Editar proyecto
             </button>
-          </>
+            <button className="btn" style={{ padding: '4px 10px', fontSize: 11, color: 'var(--danger)' }} onClick={handleDelete}>
+              🗑️ Eliminar
+            </button>
+          </div>
         )}
       </div>
       <div className="project-meta">
