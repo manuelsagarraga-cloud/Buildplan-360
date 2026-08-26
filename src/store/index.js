@@ -359,20 +359,27 @@ export const useStore = create((set, get) => ({
     }
 
     // Third pass: dependencies
+    let depCount = 0
     for (const t of importTasks) {
       const succId = uidToId[t._importUID]
-      if (!succId) continue
+      if (!succId || !t._predecessorLinks || t._predecessorLinks.length === 0) continue
       for (const pl of t._predecessorLinks) {
         const predId = uidToId[pl.predUID]
         if (!predId || predId === succId) continue
-        await sb.from('task_dependencies').insert({
+        const { error } = await sb.from('task_dependencies').insert({
           predecessor_id: predId,
           successor_id: succId,
-          dependency_type: pl.type,
-          lag_days: pl.lag,
-        }).then(() => {})
+          dependency_type: pl.type || 'finish_to_start',
+          lag_days: pl.lag || 0,
+        })
+        if (error) {
+          console.warn('[import] dep error:', pl, error.message)
+        } else {
+          depCount++
+        }
       }
     }
+    console.log('[import] dependencias creadas:', depCount)
 
     await get().reloadProject()
     return importTasks.length
