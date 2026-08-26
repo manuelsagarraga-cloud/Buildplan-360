@@ -782,3 +782,6 @@ textarea.form-control{resize:vertical;min-height:68px;line-height:1.5}
 .listas-name { flex: 1; font-size: 14px; }
 .listas-actions { display: flex; gap: 4px; }
 .listas-add { display: flex; gap: 8px; }
+
+/* ── Forzar anchos de columna reales (no comprimir al ancho del panel) ── */
+.left-header, .task-row { min-width: max-content; }
