@@ -161,14 +161,25 @@ export const useStore = create((set, get) => ({
       if (tRes.error) throw tRes.error
       const tasks = tRes.data || []
       const ids = new Set(tasks.map(t => t.id))
+      console.log('[loadProject] tareas:', tasks.length, 'ids:', ids.size)
 
-      const dRes = await sb.from('task_dependencies').select('*').limit(10000)
-      if (dRes.error) throw dRes.error
-      const deps = (dRes.data || []).filter(d => ids.has(d.predecessor_id) && ids.has(d.successor_id))
+      // Cargar dependencias — intentar filtradas primero, fallback a todas
+      let deps = []
+      try {
+        // Traer todas las deps y filtrar por este proyecto
+        const dRes = await sb.from('task_dependencies').select('*').limit(10000)
+        console.log('[loadProject] deps raw:', dRes.data?.length, 'error:', dRes.error?.message || 'ninguno')
+        if (dRes.data) {
+          deps = dRes.data.filter(d => ids.has(d.predecessor_id) && ids.has(d.successor_id))
+        }
+      } catch (depErr) {
+        console.warn('[loadProject] error cargando deps:', depErr)
+      }
+      console.log('[loadProject] deps filtradas para este proyecto:', deps.length)
 
       set({ currentProject: project, tasks, deps, page: 'gantt', collapsed: new Set(), activeTab: 'gantt' })
     } catch (e) {
-      console.error(e)
+      console.error('[loadProject] error:', e)
     }
   },
 
