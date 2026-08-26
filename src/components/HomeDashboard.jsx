@@ -18,8 +18,9 @@ export function HomeDashboard() {
   useEffect(() => {
     if (!canEdit || projects.length === 0) { setLoading(false); return }
     // Cargar todas las tareas de todos los proyectos de la empresa (RLS filtra por empresa)
-    sb.from('tasks').select('id,name,status,progress,end_date,assigned_to,is_milestone,project_id')
+    sb.from('tasks').select('id,name,status,progress,end_date,assigned_to,is_milestone,project_id').limit(5000)
       .then(({ data }) => { setTasks(data || []); setLoading(false) })
+      .catch(() => setLoading(false))
   }, [projects.length, canEdit])
 
   const { members } = useStore()
