@@ -129,7 +129,9 @@ export function parsePredecessors(str) {
 // ─── MS Project XML parser ─────────────────────────────────────
 export function parseMSProjectXML(xmlText) {
   const parser = new DOMParser()
-  const doc = parser.parseFromString(xmlText, 'application/xml')
+  // Quitar namespaces del XML para que querySelectorAll funcione con tags directos
+  const cleanXml = xmlText.replace(/ xmlns(:[a-z]+)?="[^"]*"/gi, '')
+  const doc = parser.parseFromString(cleanXml, 'application/xml')
 
   const parseError = doc.querySelector('parsererror')
   if (parseError) throw new Error('XML inválido: ' + parseError.textContent)
