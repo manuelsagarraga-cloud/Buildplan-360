@@ -8,7 +8,7 @@ import { isOverdue, formatDate } from '../lib/utils.js'
  * Accesible a todos los usuarios logueados.
  */
 export function BoardPage() {
-  const { projects, members } = useStore()
+  const { projects, members, loadProject } = useStore()
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -16,6 +16,7 @@ export function BoardPage() {
     if (projects.length === 0) { setLoading(false); return }
     sb.from('tasks')
       .select('id,name,status,progress,end_date,start_date,assigned_to,is_milestone,project_id,contratista,rubro')
+      .limit(5000)
       .then(({ data }) => { setTasks(data || []); setLoading(false) })
   }, [projects.length])
 
@@ -95,7 +96,13 @@ export function BoardPage() {
           : byProject.map(p => (
             <div key={p.id} style={{ marginBottom: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
-                <span style={{ fontWeight: 600, color: 'var(--text-1)' }}>{p.name}</span>
+                <span
+                  style={{ fontWeight: 600, color: 'var(--brand)', cursor: 'pointer', textDecoration: 'none' }}
+                  onClick={() => loadProject(p.id)}
+                  onMouseEnter={e => e.target.style.textDecoration = 'underline'}
+                  onMouseLeave={e => e.target.style.textDecoration = 'none'}
+                  title="Abrir proyecto"
+                >{p.name}</span>
                 <span style={{ color: 'var(--text-3)', display: 'flex', gap: 12 }}>
                   {p.overdue > 0 && <span style={{ color: 'var(--danger)', fontWeight: 600 }}>⚠ {p.overdue} vencidas</span>}
                   <span>{p.completed}/{p.total} tareas · {p.avg}%</span>
