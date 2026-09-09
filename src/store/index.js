@@ -112,13 +112,22 @@ export const useStore = create((set, get) => ({
       deleted_by: (await sb.auth.getUser()).data?.user?.id,
     })
 
-    // Eliminar dependencias, tareas y proyecto
-    for (const d of deps) {
-      await sb.from('task_dependencies').delete().eq('id', d.id)
+    // Eliminar dependencias, tareas y proyecto en batches (no de a uno)
+    const depIds = deps.map(d => d.id)
+    const taskIds = tasks.map(t => t.id)
+    const DEL_BATCH = 200
+
+    // Dependencias en batches
+    for (let i = 0; i < depIds.length; i += DEL_BATCH) {
+      const batch = depIds.slice(i, i + DEL_BATCH)
+      await sb.from('task_dependencies').delete().in('id', batch)
     }
-    for (const t of tasks) {
-      await sb.from('tasks').delete().eq('id', t.id)
+    // Tareas en batches
+    for (let i = 0; i < taskIds.length; i += DEL_BATCH) {
+      const batch = taskIds.slice(i, i + DEL_BATCH)
+      await sb.from('tasks').delete().in('id', batch)
     }
+    // Proyecto
     await sb.from('projects').delete().eq('id', projectId)
 
     set(s => ({
