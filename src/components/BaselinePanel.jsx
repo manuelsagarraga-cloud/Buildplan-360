@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { sb } from '../lib/supabase'
 import { useStore } from '../store/index.js'
+import { parseDate } from '../lib/utils.js'
 
 function fmt(d) {
   if (!d) return '—'
@@ -8,9 +9,9 @@ function fmt(d) {
   return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : d
 }
 
-function diffDays(a, b) {
+function diffDaysUTC(a, b) {
   if (!a || !b) return null
-  return Math.round((new Date(a) - new Date(b)) / 86400000)
+  return Math.round((parseDate(a) - parseDate(b)) / 86400000)
 }
 
 export default function BaselinePanel({ onClose }) {
@@ -69,13 +70,13 @@ export default function BaselinePanel({ onClose }) {
     if (t.end_date && (!maxCur || t.end_date > maxCur)) maxCur = t.end_date
     const be = baseEnd[t.id]
     if (be != null) {
-      const v = diffDays(t.end_date, be)
+      const v = diffDaysUTC(t.end_date, be)
       if (v && v !== 0) rows.push({ name: t.name, be, ce: t.end_date, v })
     }
   })
   rows.sort((a, b) => Math.abs(b.v) - Math.abs(a.v))
 
-  const projDelay = bl ? (diffDays(maxCur, maxBase) || 0) : 0
+  const projDelay = bl ? (diffDaysUTC(maxCur, maxBase) || 0) : 0
 
   return (
     <div className="bl-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>

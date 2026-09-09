@@ -102,6 +102,7 @@ export function GanttView() {
   const [colWidthOpen, setColWidthOpen] = useState(false)
   const [baselineOpen, setBaselineOpen] = useState(false)
   const [colWidths, setColWidths] = useState(DEFAULT_WIDTHS)
+  const [colWidthsReady, setColWidthsReady] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [leftPaneW, setLeftPaneW] = useState(640)
   const [ganttHidden, setGanttHidden] = useState(false)
@@ -111,13 +112,14 @@ export function GanttView() {
   const activeTab = useStore(s => s.activeTab)
   const setActiveTab = useStore(s => s.setActiveTab)
 
-  // Cargar anchos de columna desde system_settings
+  // Cargar anchos de columna desde system_settings (antes de renderizar la tabla)
   useEffect(() => {
     sb.from('system_settings').select('value').eq('key', 'column_widths').then(res => {
       if (res.data && res.data[0] && res.data[0].value) {
         setColWidths(w => ({ ...w, ...res.data[0].value }))
       }
-    })
+      setColWidthsReady(true)
+    }).catch(() => setColWidthsReady(true))
   }, [])
 
   async function saveColWidths(newWidths) {
@@ -270,6 +272,11 @@ export function GanttView() {
   }
 
   const filterCls = useStore(s => s.filters)
+
+  // No renderizar la tabla hasta que los anchos de columna estén cargados
+  if (!colWidthsReady) {
+    return <div style={{ padding: 24, color: 'var(--text-3)', fontSize: 13 }}>Cargando vista…</div>
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
