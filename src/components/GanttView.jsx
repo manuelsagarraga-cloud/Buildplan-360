@@ -487,7 +487,9 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
   // Si cambia end_date o start_date, recalcula sucesoras en cascada.
   function quickSave(taskId, field, value) {
     const v = value === '' ? null : value
-    const task = tasks.find(t => t.id === taskId)
+    // Leer estado fresco del store (no del render, que puede estar viejo)
+    const freshTasks = useStore.getState().tasks
+    const task = freshTasks.find(t => t.id === taskId)
     const lastUpdated = task?.updated_at || null
 
     // Actualización optimista inmediata
@@ -503,6 +505,7 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
     if ((field === 'end_date') && v && task) {
       const oldEnd = task.end_date
       if (oldEnd && oldEnd !== v) {
+        console.log(`[cascade] Disparando: tarea ${task.name}, end ${oldEnd} → ${v}`)
         cascadeFromTask(taskId, v)
       }
     }
@@ -517,14 +520,14 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
     const changes = [] // [{ id, start_date, end_date }]
 
     // Usar el estado optimista más reciente de las tareas
-    const currentTasks = useStore.getState().tasks
+    const { tasks: currentTasks, deps: currentDeps } = useStore.getState()
 
     while (bfsQueue.length > 0) {
       const { taskId: predId, endDate: predEnd } = bfsQueue.shift()
       if (visited.has(predId)) continue
       visited.add(predId)
 
-      const successorDeps = deps.filter(d => d.predecessor_id === predId)
+      const successorDeps = currentDeps.filter(d => d.predecessor_id === predId)
 
       for (const dep of successorDeps) {
         // Buscar la tarea en los cambios ya calculados o en el estado original
@@ -555,7 +558,10 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
       }
     }
 
-    if (changes.length === 0) return
+    if (changes.length === 0) {
+      console.log('[cascade] Sin sucesoras que mover')
+      return
+    }
 
     // 1) Actualización optimista: un solo setState con todos los cambios
     const changeMap = {}
