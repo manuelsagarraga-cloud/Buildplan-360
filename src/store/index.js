@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { sb } from '../lib/supabase'
-import { buildHierarchy } from '../lib/utils.js'
+import { buildHierarchy, fetchAllRows } from '../lib/utils.js'
 
 export const useStore = create((set, get) => ({
   // ─── Connection ─────────────────────────────────────────────
@@ -146,10 +146,10 @@ export const useStore = create((set, get) => ({
       if (mRes.error) throw mRes.error
       if (pRes.error) throw pRes.error
 
-      // Frescura: última tarea actualizada por proyecto (con limit alto)
+      // Frescura: última tarea actualizada por proyecto (paginado)
       let freshMap = {}
-      const fRes = await sb.from('tasks').select('project_id,updated_at').order('updated_at', { ascending: false }).limit(5000)
-      for (const row of (fRes.data || [])) {
+      const freshRows = await fetchAllRows(sb.from('tasks').select('project_id,updated_at').order('updated_at', { ascending: false }))
+      for (const row of freshRows) {
         if (!freshMap[row.project_id]) freshMap[row.project_id] = row.updated_at
       }
       const projects = (pRes.data || []).map(p => ({ ...p, last_activity: freshMap[p.id] || null }))
