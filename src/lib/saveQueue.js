@@ -65,6 +65,21 @@ export function getPendingCount() {
   return pendingQueue.length + Object.keys(pendingTimers).length
 }
 
+/** Espera hasta que la cola esté vacía (máx. waitMs milisegundos). */
+export function waitForEmpty(waitMs = 30000) {
+  return new Promise(resolve => {
+    const start = Date.now()
+    const check = () => {
+      if (getPendingCount() === 0 || Date.now() - start > waitMs) {
+        resolve(getPendingCount())
+        return
+      }
+      setTimeout(check, 500)
+    }
+    check()
+  })
+}
+
 /** Fuerza el envío de todo lo pendiente (flush). Útil antes de cerrar. */
 export function flushAll() {
   // Ejecutar todos los timers pendientes inmediatamente
@@ -97,18 +112,19 @@ async function processQueue() {
     if (success) {
       pendingQueue.shift()
       notifyStatus(item.taskId, 'ok', item.field)
-    } else if (item.retries < 3) {
+    } else if (item.retries < 5) {
       item.retries++
       item._processing = false
-      // Backoff exponencial: 1s, 2s, 4s
-      const delay = Math.pow(2, item.retries - 1) * 1000
+      // Backoff exponencial: 2s, 4s, 6s, 8s, 10s
+      const delay = item.retries * 2000
+      console.log(`[saveQueue] Reintento ${item.retries}/5 en ${delay/1000}s para ${item.field}`)
       await sleep(delay)
       // Volver al inicio del loop para reintentar (el item sigue en posición 0)
       continue
     } else {
-      // 3 reintentos agotados — sacar de la cola y notificar error
+      // 5 reintentos agotados — sacar de la cola y notificar error
       pendingQueue.shift()
-      notifyStatus(item.taskId, 'error', item.field, 'No se pudo guardar después de 3 intentos')
+      notifyStatus(item.taskId, 'error', item.field, 'No se pudo guardar después de 5 intentos. Recargá la página y volvé a intentar.')
     }
   }
 
@@ -152,8 +168,12 @@ function sleep(ms) {
 if (typeof window !== 'undefined') {
   window.addEventListener('online', () => {
     if (pendingQueue.length > 0) {
-      console.log(`[saveQueue] Online — procesando ${pendingQueue.length} cambio(s) pendiente(s)`)
-      processQueue()
+      console.log(`[saveQueue] Online — esperando 3s para estabilizar red, ${pendingQueue.length} cambio(s) pendiente(s)`)
+      // Esperar 3 segundos para que la red se estabilice antes de intentar
+      setTimeout(() => {
+        console.log(`[saveQueue] Iniciando envío de ${pendingQueue.length} cambio(s)`)
+        processQueue()
+      }, 3000)
     }
   })
 
