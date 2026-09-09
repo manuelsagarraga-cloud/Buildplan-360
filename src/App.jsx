@@ -21,6 +21,7 @@ import { AdminPage } from './pages/AdminPage.jsx'
 import { ListasPage } from './pages/ListasPage.jsx'
 import { OfflineBanner } from './components/OfflineBanner.jsx'
 import { MobileApp } from './components/MobileApp.jsx'
+import { ErrorBoundary } from './components/ErrorBoundary.jsx'
 
 // Detecta pantalla chica (móvil) y reacciona a cambios de tamaño/rotación
 function useIsMobile() {
@@ -95,6 +96,7 @@ export default function App() {
   const empresa = currentMember?.company_name
 
   return (
+    <ErrorBoundary>
     <div className="app-layout">
       {/* ── Top bar ──────────────────────────────────────────── */}
       <header className="app-bar">
@@ -156,5 +158,6 @@ export default function App() {
       <OfflineBanner />
       <ToastContainer />
     </div>
+    </ErrorBoundary>
   )
 }
