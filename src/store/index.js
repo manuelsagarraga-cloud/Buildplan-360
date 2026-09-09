@@ -90,10 +90,19 @@ export const useStore = create((set, get) => ({
 
     // Guardar snapshot en deleted_projects para poder restaurar
     const tRes = await sb.from('tasks').select('*').eq('project_id', projectId).limit(5000)
-    const dRes = await sb.from('task_dependencies').select('*').limit(10000)
     const tasks = tRes.data || []
-    const ids = new Set(tasks.map(t => t.id))
-    const deps = (dRes.data || []).filter(d => ids.has(d.predecessor_id) && ids.has(d.successor_id))
+    const ids = tasks.map(t => t.id)
+
+    // Traer solo las dependencias de las tareas de este proyecto
+    let deps = []
+    const BATCH = 200
+    for (let i = 0; i < ids.length; i += BATCH) {
+      const batch = ids.slice(i, i + BATCH)
+      const { data } = await sb.from('task_dependencies').select('*').in('predecessor_id', batch)
+      if (data) deps.push(...data)
+    }
+    const idSet = new Set(ids)
+    deps = deps.filter(d => idSet.has(d.successor_id))
 
     const snapshot = { project, tasks, deps }
     await sb.from('deleted_projects').insert({
@@ -160,26 +169,23 @@ export const useStore = create((set, get) => ({
       const tRes = await sb.from('tasks').select('*').eq('project_id', projectId).order('order_index').limit(5000)
       if (tRes.error) throw tRes.error
       const tasks = tRes.data || []
-      const ids = new Set(tasks.map(t => t.id))
-      console.log('[loadProject] tareas:', tasks.length, 'ids:', ids.size)
+      const ids = tasks.map(t => t.id)
+      console.log('[loadProject] tareas:', tasks.length)
 
-      // Cargar TODAS las dependencias paginando (PostgREST corta en 1000 por página)
-      let allDeps = []
-      let page = 0
-      while (true) {
-        const from = page * 1000
-        const to = from + 999
-        const { data, error } = await sb.from('task_dependencies').select('*').range(from, to)
-        if (error) { console.warn('[loadProject] deps page error:', error.message); break }
-        if (!data || data.length === 0) break
-        allDeps.push(...data)
-        console.log('[loadProject] deps página', page, ':', data.length, '(acumulado:', allDeps.length, ')')
-        if (data.length < 1000) break
-        page++
+      // Cargar dependencias SOLO de las tareas de este proyecto (server-side filter).
+      // PostgREST tiene límite de URL, así que partimos las IDs en batches de 200.
+      let deps = []
+      const BATCH = 200
+      for (let i = 0; i < ids.length; i += BATCH) {
+        const batch = ids.slice(i, i + BATCH)
+        const { data, error } = await sb.from('task_dependencies').select('*').in('predecessor_id', batch)
+        if (error) { console.warn('[loadProject] deps batch error:', error.message); continue }
+        if (data) deps.push(...data)
       }
-
-      const deps = allDeps.filter(d => ids.has(d.predecessor_id) && ids.has(d.successor_id))
-      console.log('[loadProject] deps total:', allDeps.length, 'de este proyecto:', deps.length)
+      // Filtrar: solo mantener las que tienen ambos extremos en este proyecto
+      const idSet = new Set(ids)
+      deps = deps.filter(d => idSet.has(d.successor_id))
+      console.log('[loadProject] deps de este proyecto:', deps.length)
 
       set({ currentProject: project, tasks, deps, page: 'gantt', collapsed: new Set(), activeTab: 'gantt' })
     } catch (e) {
