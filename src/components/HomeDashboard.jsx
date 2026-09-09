@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useStore } from '../store/index.js'
 import { useAuth } from '../store/auth.js'
 import { sb } from '../lib/supabase.js'
-import { isOverdue, formatDate, fetchAllRows } from '../lib/utils.js'
+import { isOverdue, formatDate } from '../lib/utils.js'
 
 /**
  * Dashboard de gestión en la home.
@@ -15,11 +15,22 @@ export function HomeDashboard() {
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
 
+  // Año en curso — se actualiza solo cada enero
+  const currentYear = new Date().getFullYear()
+  const yearStart = `${currentYear}-01-01`
+  const yearEnd = `${currentYear}-12-31`
+
   useEffect(() => {
     if (!canEdit || projects.length === 0) { setLoading(false); return }
-    // Cargar TODAS las tareas paginando (PostgREST corta en 1000 por página)
-    fetchAllRows(sb.from('tasks').select('id,name,status,progress,end_date,assigned_to,is_milestone,project_id'))
-      .then(rows => { setTasks(rows); setLoading(false) })
+    // Cargar solo tareas que se crucen con el año en curso:
+    // end_date >= 1/1/YYYY (no terminaron antes del año)
+    // start_date <= 31/12/YYYY (no arrancan después del año)
+    sb.from('tasks')
+      .select('id,name,status,progress,end_date,assigned_to,is_milestone,project_id')
+      .gte('end_date', yearStart)
+      .lte('start_date', yearEnd)
+      .limit(1000)
+      .then(({ data }) => { setTasks(data || []); setLoading(false) })
       .catch(() => setLoading(false))
   }, [projects.length, canEdit])
 
@@ -60,10 +71,15 @@ export function HomeDashboard() {
 
   return (
     <div style={{ padding: '20px 28px 0' }}>
+      {/* Título con año */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>📊 Resumen {currentYear}</span>
+        <span style={{ fontSize: 11, color: 'var(--text-3)' }}>Tareas que se cruzan con el año en curso</span>
+      </div>
       {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 12, marginBottom: 20 }}>
         <Kpi value={activeProjs} label="Proyectos activos" color="var(--brand)" />
-        <Kpi value={total} label="Tareas totales" color="var(--text-2)" />
+        <Kpi value={total} label={`Tareas ${currentYear}`} color="var(--text-2)" />
         <Kpi value={completed} label="Completadas" color="var(--success)" />
         <Kpi value={inProgress} label="En curso" color="var(--info)" />
         <Kpi value={overdue} label="Vencidas" color={overdue > 0 ? 'var(--danger)' : 'var(--success)'} />
