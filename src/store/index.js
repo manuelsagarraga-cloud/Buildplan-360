@@ -157,7 +157,7 @@ export const useStore = create((set, get) => ({
 
       // Frescura: última tarea actualizada por proyecto (paginado)
       let freshMap = {}
-      const freshRows = await fetchAllRows(sb.from('tasks').select('project_id,updated_at').order('updated_at', { ascending: false }))
+      const freshRows = await fetchAllRows(() => sb.from('tasks').select('project_id,updated_at').order('updated_at', { ascending: false }))
       for (const row of freshRows) {
         if (!freshMap[row.project_id]) freshMap[row.project_id] = row.updated_at
       }
