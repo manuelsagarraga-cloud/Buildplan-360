@@ -35,6 +35,27 @@ export function businessDays(start, end) {
   return count
 }
 
+/**
+ * Suma N días hábiles (lun-vie) a una fecha y devuelve la fecha de fin en formato YYYY-MM-DD.
+ * Ej: addBusinessDays('2026-01-05', 5) → '2026-01-09' (lun a vie)
+ */
+export function addBusinessDays(startStr, days) {
+  if (!startStr || days < 1) return startStr
+  const cur = parseDate(startStr)
+  let remaining = days
+  // El día de inicio cuenta como día 1
+  while (remaining > 1) {
+    cur.setUTCDate(cur.getUTCDate() + 1)
+    const dow = cur.getUTCDay()
+    if (dow !== 0 && dow !== 6) remaining--
+  }
+  // Si caemos en fin de semana, avanzar al lunes
+  while (cur.getUTCDay() === 0 || cur.getUTCDay() === 6) {
+    cur.setUTCDate(cur.getUTCDate() + 1)
+  }
+  return dateToISO(cur)
+}
+
 export function isOverdue(t) {
   if (t.status === 'completed') return false
   return t.end_date < new Date().toISOString().split('T')[0]
