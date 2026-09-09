@@ -34,7 +34,7 @@ function buildColTemplate(hidden, widths) {
   return COL_DEFS.map(c => {
     if (c.toggle && hidden.has(c.key)) return '0px'
     const w = (widths && widths[c.key] != null) ? widths[c.key] : DEFAULT_WIDTHS[c.key]
-    if (c.key === 'name') return w ? `${w}px` : '1fr'
+    if (c.key === 'name') return w ? `${w}px` : 'minmax(120px, 1fr)'
     if (w) return w + 'px'
     return '1fr'
   }).join(' ')

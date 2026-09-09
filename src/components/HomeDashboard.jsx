@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useStore } from '../store/index.js'
 import { useAuth } from '../store/auth.js'
 import { sb } from '../lib/supabase.js'
-import { isOverdue, formatDate } from '../lib/utils.js'
+import { isOverdue, formatDate, fetchAllRows } from '../lib/utils.js'
 
 /**
  * Dashboard de gestión en la home.
@@ -17,9 +17,9 @@ export function HomeDashboard() {
 
   useEffect(() => {
     if (!canEdit || projects.length === 0) { setLoading(false); return }
-    // Cargar todas las tareas de todos los proyectos de la empresa (RLS filtra por empresa)
-    sb.from('tasks').select('id,name,status,progress,end_date,assigned_to,is_milestone,project_id').limit(5000)
-      .then(({ data }) => { setTasks(data || []); setLoading(false) })
+    // Cargar TODAS las tareas paginando (PostgREST corta en 1000 por página)
+    fetchAllRows(sb.from('tasks').select('id,name,status,progress,end_date,assigned_to,is_milestone,project_id'))
+      .then(rows => { setTasks(rows); setLoading(false) })
       .catch(() => setLoading(false))
   }, [projects.length, canEdit])
 
