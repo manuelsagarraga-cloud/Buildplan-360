@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { useStore } from '../store/index.js'
-import { getVisibleTasks, businessDays, addBusinessDays, formatDate, isOverdue, addDays, getSuccessorChain, shiftDateStr, diffDays } from '../lib/utils.js'
+import { getVisibleTasks, businessDays, addBusinessDays, nextBusinessDayAfter, formatDate, isOverdue, addDays, getSuccessorChain, shiftDateStr, diffDays } from '../lib/utils.js'
 import { DEP_TYPE_ABBR, sb } from '../lib/supabase.js'
 import { GanttSvg } from './GanttSvg.jsx'
 import BaselinePanel from './BaselinePanel.jsx'
@@ -483,19 +483,87 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
     return unsub
   }, [])
 
-  // Guardar con debounce, reintentos y soporte offline
+  // Guardar con debounce, reintentos y soporte offline.
+  // Si cambia end_date o start_date, recalcula sucesoras en cascada.
   function quickSave(taskId, field, value) {
     const v = value === '' ? null : value
     const task = tasks.find(t => t.id === taskId)
     const lastUpdated = task?.updated_at || null
 
-    // Actualización optimista inmediata (la UI refleja el cambio al instante)
+    // Actualización optimista inmediata
     useStore.setState(s => ({
       tasks: s.tasks.map(t => t.id === taskId ? { ...t, [field]: v } : t)
     }))
 
-    // Encolar el save real (debounce 500ms, 5 reintentos, bloqueo optimista)
+    // Encolar el save
     enqueueSave(taskId, field, value, sb, lastUpdated)
+
+    // ── Cascada de dependencias ──
+    // Si cambió end_date, recalcular sucesoras encadenadas
+    if ((field === 'end_date') && v && task) {
+      const oldEnd = task.end_date
+      if (oldEnd && oldEnd !== v) {
+        cascadeFromTask(taskId, v)
+      }
+    }
+  }
+
+  // Recalcula sucesoras en cascada cuando cambia el end_date de una tarea.
+  // Respeta el tipo de dependencia y el lag. Mantiene la duración de cada sucesora.
+  function cascadeFromTask(changedTaskId, newEndDate) {
+    const visited = new Set()
+    const queue = [{ taskId: changedTaskId, endDate: newEndDate }]
+
+    while (queue.length > 0) {
+      const { taskId: predId, endDate: predEnd } = queue.shift()
+      if (visited.has(predId)) continue
+      visited.add(predId)
+
+      // Buscar dependencias donde esta tarea es predecesora
+      const successorDeps = deps.filter(d => d.predecessor_id === predId)
+
+      for (const dep of successorDeps) {
+        const succ = tasks.find(t => t.id === dep.successor_id)
+        if (!succ || visited.has(succ.id)) continue
+
+        const lag = dep.lag_days || 0
+        const type = dep.dependency_type || 'finish_to_start'
+
+        let newSuccStart = null
+
+        if (type === 'finish_to_start') {
+          // Sucesora arranca el siguiente día hábil después del fin de la predecesora + lag
+          newSuccStart = nextBusinessDayAfter(predEnd, lag)
+        } else if (type === 'start_to_start') {
+          // Sucesora arranca el mismo día que la predecesora inicia + lag
+          const pred = tasks.find(t => t.id === predId)
+          if (pred) newSuccStart = lag > 0 ? nextBusinessDayAfter(pred.start_date, lag - 1) : pred.start_date
+        }
+        // finish_to_finish y start_to_finish son más complejos, por ahora no cascadean
+
+        if (!newSuccStart || newSuccStart === succ.start_date) continue
+
+        // Mantener la duración original de la sucesora
+        const succDuration = businessDays(succ.start_date, succ.end_date)
+        const newSuccEnd = addBusinessDays(newSuccStart, Math.max(succDuration, 1))
+
+        // Guardar ambos cambios (inicio y fin de la sucesora)
+        useStore.setState(s => ({
+          tasks: s.tasks.map(t => t.id === succ.id ? { ...t, start_date: newSuccStart, end_date: newSuccEnd } : t)
+        }))
+        enqueueSave(succ.id, 'start_date', newSuccStart, sb, succ.updated_at)
+        enqueueSave(succ.id, 'end_date', newSuccEnd, sb, succ.updated_at)
+
+        // Encolar esta sucesora para propagar la cascada
+        queue.push({ taskId: succ.id, endDate: newSuccEnd })
+      }
+    }
+
+    // Notificar cuántas tareas se movieron
+    const moved = visited.size - 1 // excluir la tarea original
+    if (moved > 0) {
+      toast(`Cascada: ${moved} tarea(s) sucesora(s) recalculada(s)`, 'success')
+    }
   }
 
   return (
