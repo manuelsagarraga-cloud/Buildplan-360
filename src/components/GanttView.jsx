@@ -510,59 +510,77 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
 
   // Recalcula sucesoras en cascada cuando cambia el end_date de una tarea.
   // Respeta el tipo de dependencia y el lag. Mantiene la duración de cada sucesora.
-  function cascadeFromTask(changedTaskId, newEndDate) {
+  // Junta todos los cambios y los guarda en batch (1 save por tarea, sin chequeo de conflicto).
+  async function cascadeFromTask(changedTaskId, newEndDate) {
     const visited = new Set()
-    const queue = [{ taskId: changedTaskId, endDate: newEndDate }]
+    const bfsQueue = [{ taskId: changedTaskId, endDate: newEndDate }]
+    const changes = [] // [{ id, start_date, end_date }]
 
-    while (queue.length > 0) {
-      const { taskId: predId, endDate: predEnd } = queue.shift()
+    // Usar el estado optimista más reciente de las tareas
+    const currentTasks = useStore.getState().tasks
+
+    while (bfsQueue.length > 0) {
+      const { taskId: predId, endDate: predEnd } = bfsQueue.shift()
       if (visited.has(predId)) continue
       visited.add(predId)
 
-      // Buscar dependencias donde esta tarea es predecesora
       const successorDeps = deps.filter(d => d.predecessor_id === predId)
 
       for (const dep of successorDeps) {
-        const succ = tasks.find(t => t.id === dep.successor_id)
+        // Buscar la tarea en los cambios ya calculados o en el estado original
+        const existing = changes.find(c => c.id === dep.successor_id)
+        const succ = existing
+          ? { ...currentTasks.find(t => t.id === dep.successor_id), start_date: existing.start_date, end_date: existing.end_date }
+          : currentTasks.find(t => t.id === dep.successor_id)
         if (!succ || visited.has(succ.id)) continue
 
         const lag = dep.lag_days || 0
         const type = dep.dependency_type || 'finish_to_start'
-
         let newSuccStart = null
 
         if (type === 'finish_to_start') {
-          // Sucesora arranca el siguiente día hábil después del fin de la predecesora + lag
           newSuccStart = nextBusinessDayAfter(predEnd, lag)
         } else if (type === 'start_to_start') {
-          // Sucesora arranca el mismo día que la predecesora inicia + lag
-          const pred = tasks.find(t => t.id === predId)
+          const pred = currentTasks.find(t => t.id === predId)
           if (pred) newSuccStart = lag > 0 ? nextBusinessDayAfter(pred.start_date, lag - 1) : pred.start_date
         }
-        // finish_to_finish y start_to_finish son más complejos, por ahora no cascadean
 
         if (!newSuccStart || newSuccStart === succ.start_date) continue
 
-        // Mantener la duración original de la sucesora
         const succDuration = businessDays(succ.start_date, succ.end_date)
         const newSuccEnd = addBusinessDays(newSuccStart, Math.max(succDuration, 1))
 
-        // Guardar ambos cambios (inicio y fin de la sucesora)
-        useStore.setState(s => ({
-          tasks: s.tasks.map(t => t.id === succ.id ? { ...t, start_date: newSuccStart, end_date: newSuccEnd } : t)
-        }))
-        enqueueSave(succ.id, 'start_date', newSuccStart, sb, succ.updated_at)
-        enqueueSave(succ.id, 'end_date', newSuccEnd, sb, succ.updated_at)
-
-        // Encolar esta sucesora para propagar la cascada
-        queue.push({ taskId: succ.id, endDate: newSuccEnd })
+        changes.push({ id: succ.id, start_date: newSuccStart, end_date: newSuccEnd })
+        bfsQueue.push({ taskId: succ.id, endDate: newSuccEnd })
       }
     }
 
-    // Notificar cuántas tareas se movieron
-    const moved = visited.size - 1 // excluir la tarea original
-    if (moved > 0) {
-      toast(`Cascada: ${moved} tarea(s) sucesora(s) recalculada(s)`, 'success')
+    if (changes.length === 0) return
+
+    // 1) Actualización optimista: un solo setState con todos los cambios
+    const changeMap = {}
+    changes.forEach(c => { changeMap[c.id] = c })
+    useStore.setState(s => ({
+      tasks: s.tasks.map(t => changeMap[t.id]
+        ? { ...t, start_date: changeMap[t.id].start_date, end_date: changeMap[t.id].end_date }
+        : t
+      )
+    }))
+
+    // 2) Guardar en Supabase: un update por tarea (start+end juntos, sin conflicto)
+    toast(`Cascada: recalculando ${changes.length} tarea(s)…`, 'success')
+    let saved = 0, failed = 0
+    for (const c of changes) {
+      try {
+        const { error } = await sb.from('tasks').update({ start_date: c.start_date, end_date: c.end_date }).eq('id', c.id)
+        if (error) { failed++; console.warn('[cascade] error:', c.id, error.message) }
+        else saved++
+      } catch (e) { failed++; console.warn('[cascade] excepción:', c.id, e.message) }
+    }
+    if (failed > 0) {
+      toast(`Cascada: ${saved} guardadas, ${failed} con error`, 'warning')
+    } else {
+      toast(`Cascada: ${saved} tarea(s) actualizadas ✓`, 'success')
     }
   }
 
