@@ -262,3 +262,25 @@ export function freshness(lastActivity) {
   else texto = `Hace ${dias} días`
   return { dias, nivel, texto }
 }
+
+/**
+ * Carga TODAS las filas de una query de Supabase, paginando de a 1000.
+ * PostgREST tiene un max_rows de 1000 por defecto; esta función lo sortea.
+ *
+ * Uso: const rows = await fetchAllRows(sb.from('tasks').select('id,name,...'))
+ */
+export async function fetchAllRows(queryBuilder, pageSize = 1000) {
+  let all = []
+  let page = 0
+  while (true) {
+    const from = page * pageSize
+    const to = from + pageSize - 1
+    const { data, error } = await queryBuilder.range(from, to)
+    if (error) { console.warn('[fetchAllRows] error:', error.message); break }
+    if (!data || data.length === 0) break
+    all.push(...data)
+    if (data.length < pageSize) break
+    page++
+  }
+  return all
+}
