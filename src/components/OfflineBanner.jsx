@@ -1,22 +1,35 @@
 import React, { useState, useEffect } from 'react'
 import { useStore } from '../store/index.js'
+import { getPendingCount } from '../lib/saveQueue.js'
 
 /**
- * Banner de modo offline.
- * Detecta online/offline del navegador.
- * Cuando vuelve la conexión, recarga los datos automáticamente.
+ * Banner de modo offline y de sincronización.
+ * - Detecta online/offline del navegador.
+ * - Cuando vuelve la conexión, recarga datos Y la cola de guardado
+ *   se procesa automáticamente (lo maneja saveQueue.js).
+ * - Muestra cuántos cambios hay pendientes.
  */
 export function OfflineBanner() {
   const [online, setOnline] = useState(navigator.onLine)
   const [syncing, setSyncing] = useState(false)
+  const [pending, setPending] = useState(0)
   const { init, currentProject, loadProject } = useStore()
+
+  // Actualizar el contador de pendientes periódicamente
+  useEffect(() => {
+    const interval = setInterval(() => setPending(getPendingCount()), 500)
+    return () => clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     const goOnline = async () => {
       setOnline(true)
       setSyncing(true)
-      // Recargar datos al volver la conexión
+      // La cola de saveQueue se procesa sola al detectar 'online'.
+      // Acá solo recargamos los datos del servidor para sincronizar estado.
       try {
+        // Dar 2 segundos para que la cola termine de enviar
+        await new Promise(r => setTimeout(r, 2000))
         if (currentProject) await loadProject(currentProject.id)
         else await init()
       } catch (e) {
@@ -35,30 +48,50 @@ export function OfflineBanner() {
     }
   }, [currentProject?.id])
 
-  if (online && !syncing) return null
+  // No mostrar nada si está todo bien
+  if (online && !syncing && pending === 0) return null
 
-  return (
-    <div style={{
-      position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
-      zIndex: 9999, padding: '10px 20px', borderRadius: 10,
-      background: online ? 'var(--success)' : '#1f2937',
-      color: '#fff', fontSize: 13, fontWeight: 600,
-      boxShadow: '0 4px 20px rgba(0,0,0,.3)',
-      display: 'flex', alignItems: 'center', gap: 10,
-      animation: 'slideUp .2s ease',
-    }}>
-      {!online && (
-        <>
-          <span style={{ fontSize: 16 }}>⚠️</span>
-          Sin conexión — los cambios se guardarán cuando vuelva la red
-        </>
-      )}
-      {online && syncing && (
-        <>
-          <span style={{ fontSize: 16 }}>🔄</span>
-          Conexión restaurada — sincronizando datos…
-        </>
-      )}
-    </div>
-  )
+  const bannerStyle = {
+    position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
+    zIndex: 9999, padding: '10px 20px', borderRadius: 10,
+    color: '#fff', fontSize: 13, fontWeight: 600,
+    boxShadow: '0 4px 20px rgba(0,0,0,.3)',
+    display: 'flex', alignItems: 'center', gap: 10,
+    animation: 'slideUp .2s ease',
+  }
+
+  // Offline
+  if (!online) {
+    const msg = pending > 0
+      ? `Sin conexión — ${pending} cambio(s) pendiente(s), se enviarán al reconectar`
+      : 'Sin conexión — los cambios que hagas se encolarán y enviarán al reconectar'
+    return (
+      <div style={{ ...bannerStyle, background: '#1f2937' }}>
+        <span style={{ fontSize: 16 }}>⚠️</span>
+        {msg}
+      </div>
+    )
+  }
+
+  // Sincronizando después de reconexión
+  if (syncing) {
+    return (
+      <div style={{ ...bannerStyle, background: 'var(--info, #3b82f6)' }}>
+        <span style={{ fontSize: 16 }}>🔄</span>
+        Conexión restaurada — sincronizando{pending > 0 ? ` (${pending} pendiente(s))` : ''}…
+      </div>
+    )
+  }
+
+  // Online pero con saves pendientes (debounce en progreso)
+  if (pending > 0) {
+    return (
+      <div style={{ ...bannerStyle, background: 'var(--accent, #8b5cf6)', padding: '8px 16px', fontSize: 12 }}>
+        <span style={{ fontSize: 14 }}>💾</span>
+        Guardando {pending} cambio(s)…
+      </div>
+    )
+  }
+
+  return null
 }
