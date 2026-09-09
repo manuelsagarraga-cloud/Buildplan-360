@@ -104,7 +104,7 @@ export function GanttView() {
   const [colWidths, setColWidths] = useState(DEFAULT_WIDTHS)
   const [colWidthsReady, setColWidthsReady] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
-  const [leftPaneW, setLeftPaneW] = useState(640)
+  const [leftPaneW, setLeftPaneW] = useState(820)
   const [ganttHidden, setGanttHidden] = useState(false)
   const leftBodyRef = useRef(null)
   const rightBodyRef = useRef(null)
@@ -167,7 +167,7 @@ export function GanttView() {
   const startResize = useCallback(e => {
     e.preventDefault()
     const startX = e.clientX, startW = leftPaneW
-    const onMove = e => setLeftPaneW(Math.max(320, Math.min(900, startW + e.clientX - startX)))
+    const onMove = e => setLeftPaneW(Math.max(400, Math.min(1400, startW + e.clientX - startX)))
     const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp) }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
@@ -422,6 +422,45 @@ export function GanttView() {
   )
 }
 
+// ── Duration input: estado local, guarda solo al salir del campo o Enter ──
+function DurationInput({ days, disabled, onCommit }) {
+  const [draft, setDraft] = useState(String(days))
+  const [focused, setFocused] = useState(false)
+
+  // Sincronizar cuando cambian las props (ej: recarga del proyecto)
+  useEffect(() => {
+    if (!focused) setDraft(String(days))
+  }, [days, focused])
+
+  function commit() {
+    const parsed = parseInt(draft)
+    if (!parsed || parsed < 1 || parsed === days) {
+      setDraft(String(days)) // revertir si es inválido o igual
+      return
+    }
+    onCommit(parsed)
+  }
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      className="inline-pct"
+      value={focused ? draft : days}
+      disabled={disabled}
+      style={{ width: 38, textAlign: 'center' }}
+      title="Duración en días hábiles — Enter o Tab para guardar"
+      onFocus={e => { setFocused(true); setDraft(String(days)); setTimeout(() => e.target.select(), 0) }}
+      onChange={e => setDraft(e.target.value.replace(/[^0-9]/g, ''))}
+      onBlur={() => { setFocused(false); commit() }}
+      onKeyDown={e => {
+        if (e.key === 'Enter') { e.target.blur() }
+        if (e.key === 'Escape') { setDraft(String(days)); e.target.blur() }
+      }}
+    />
+  )
+}
+
 // ── Gantt split view ─────────────────────────────────────────
 function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, leftPaneW, startResize, colTpl, leftBodyRef, rightBodyRef, hiddenCols, ganttHidden }) {
   const { members, toggleCollapsed, togglePinned, pinnedTaskIds, editMode, tasks, deps, viewMode, currentProject, openTaskModal, loadProject } = useStore()
@@ -491,9 +530,9 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
             : visibleTasks.map((t, i) => {
               const m = t.assigned_to ? members.find(x => x.id === t.assigned_to) : null
               const indent = t.depth * 20
-              const isMilestone = t.is_milestone || t.start_date === t.end_date
-              const durDays = isMilestone ? 0 : businessDays(t.start_date, t.end_date)
-              const durLabel = isMilestone ? '0d' : durDays + 'd'
+              const isMilestone = !!t.is_milestone
+              const durDays = businessDays(t.start_date, t.end_date)
+              const durLabel = isMilestone ? '◆' : durDays + 'd'
               const preds = predMap[t.id] || []
               const isPinned = pinnedTaskIds.has(t.id)
               const isSelected = selectedIds.has(t.id)
@@ -534,18 +573,10 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
                   {!hiddenCols.has('dur') && (
                     <div className="cell" style={{ fontSize: 10, color: 'var(--text-2)', fontFamily: 'JetBrains Mono, monospace', justifyContent: 'center' }} onClick={e => e.stopPropagation()}>
                       {editMode && !t._isSummary && !isMilestone ? (
-                        <input
-                          type="number"
-                          className="inline-pct"
-                          min="1"
-                          value={durDays}
+                        <DurationInput
+                          days={durDays}
                           disabled={saving[t.id] === 'saving'}
-                          style={{ width: 38, textAlign: 'center' }}
-                          onClick={e => e.target.select()}
-                          title="Cambiar duración en días hábiles → recalcula fecha fin"
-                          onChange={e => {
-                            const newDur = Math.max(1, parseInt(e.target.value) || 1)
-                            // Calcular nueva fecha de fin sumando días hábiles desde start_date
+                          onCommit={newDur => {
                             const newEnd = addBusinessDays(t.start_date, newDur)
                             if (newEnd) quickSave(t.id, 'end_date', newEnd)
                           }}
