@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import { useStore } from '../store/index.js'
-import { getPendingCount } from '../lib/saveQueue.js'
+import { getPendingCount, waitForEmpty } from '../lib/saveQueue.js'
 
 /**
  * Banner de modo offline y de sincronización.
  * - Detecta online/offline del navegador.
- * - Cuando vuelve la conexión, recarga datos Y la cola de guardado
- *   se procesa automáticamente (lo maneja saveQueue.js).
- * - Muestra cuántos cambios hay pendientes.
+ * - Cuando vuelve la conexión, ESPERA a que la cola de guardado termine
+ *   antes de recargar datos del servidor (para no pisar cambios pendientes).
  */
 export function OfflineBanner() {
   const [online, setOnline] = useState(navigator.onLine)
@@ -25,11 +24,17 @@ export function OfflineBanner() {
     const goOnline = async () => {
       setOnline(true)
       setSyncing(true)
-      // La cola de saveQueue se procesa sola al detectar 'online'.
-      // Acá solo recargamos los datos del servidor para sincronizar estado.
       try {
-        // Dar 2 segundos para que la cola termine de enviar
-        await new Promise(r => setTimeout(r, 2000))
+        // Primero: esperar a que la cola de guardado termine de enviar
+        // (la cola ya arrancó sola con 3s de delay al detectar 'online')
+        // Le damos hasta 60 segundos para que agote sus reintentos.
+        console.log('[OfflineBanner] Esperando a que la cola se vacíe…')
+        const remaining = await waitForEmpty(60000)
+        if (remaining > 0) {
+          console.warn(`[OfflineBanner] La cola no se vació del todo (${remaining} pendientes)`)
+        }
+
+        // Recién ahora recargamos datos del servidor
         if (currentProject) await loadProject(currentProject.id)
         else await init()
       } catch (e) {
