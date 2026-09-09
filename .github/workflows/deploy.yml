@@ -22,15 +22,6 @@ jobs:
       - run: npm install
       - run: npm run build
 
-      # ── Copiar parches al output ──────────────────────────────────────────
-      # Agregar aquí una línea por cada nuevo parche que se incorpore.
-      - name: Copiar parches al output
-        run: |
-          cp fix-cliente-v1.js       dist/assets/fix-cliente-v1.js
-          cp campos-proyecto-v1.js   dist/assets/campos-proyecto-v1.js
-          cp admin-listas-v1.js      dist/assets/admin-listas-v1.js
-          cp p360-clicks-v1.js       dist/assets/p360-clicks-v1.js
-
       # ── Copiar 404.html al output (fallback SPA) ─────────────────────────
       - name: Copiar 404.html al output
         run: cp 404.html dist/404.html
