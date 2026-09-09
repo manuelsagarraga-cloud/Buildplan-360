@@ -23,7 +23,7 @@ export function HomeDashboard() {
   useEffect(() => {
     if (!canEdit || projects.length === 0) { setLoading(false); return }
     // Cargar tareas que se crucen con el año en curso, paginando
-    fetchAllRows(
+    fetchAllRows(() =>
       sb.from('tasks')
         .select('id,name,status,progress,end_date,assigned_to,is_milestone,project_id')
         .gte('end_date', yearStart)
