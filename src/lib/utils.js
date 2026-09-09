@@ -56,6 +56,29 @@ export function addBusinessDays(startStr, days) {
   return dateToISO(cur)
 }
 
+/**
+ * Devuelve el siguiente día hábil DESPUÉS de la fecha dada, más N días de lag.
+ * Para dependencias Finish-to-Start: si la predecesora termina el viernes,
+ * la sucesora arranca el lunes (+ lag).
+ */
+export function nextBusinessDayAfter(dateStr, lagDays = 0) {
+  if (!dateStr) return dateStr
+  const cur = parseDate(dateStr)
+  // Avanzar al menos 1 día calendario
+  cur.setUTCDate(cur.getUTCDate() + 1)
+  // Saltar fines de semana
+  while (cur.getUTCDay() === 0 || cur.getUTCDay() === 6) {
+    cur.setUTCDate(cur.getUTCDate() + 1)
+  }
+  // Si hay lag, sumar días hábiles adicionales
+  let remaining = lagDays
+  while (remaining > 0) {
+    cur.setUTCDate(cur.getUTCDate() + 1)
+    if (cur.getUTCDay() !== 0 && cur.getUTCDay() !== 6) remaining--
+  }
+  return dateToISO(cur)
+}
+
 export function isOverdue(t) {
   if (t.status === 'completed') return false
   return t.end_date < new Date().toISOString().split('T')[0]
