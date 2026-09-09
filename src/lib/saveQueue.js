@@ -103,8 +103,8 @@ async function processQueue() {
       // Backoff exponencial: 1s, 2s, 4s
       const delay = Math.pow(2, item.retries - 1) * 1000
       await sleep(delay)
-      // Verificar si la item todavía está en la queue (podría haber sido reemplazada)
-      if (pendingQueue[0] === item) continue
+      // Volver al inicio del loop para reintentar (el item sigue en posición 0)
+      continue
     } else {
       // 3 reintentos agotados — sacar de la cola y notificar error
       pendingQueue.shift()
@@ -118,7 +118,13 @@ async function processQueue() {
 async function attemptSave(item) {
   try {
     const v = item.value === '' ? null : item.value
-    const { error } = await item.sb.from('tasks').update({ [item.field]: v }).eq('id', item.taskId)
+
+    // Timeout de 10 segundos para que no se cuelgue si Supabase no responde
+    const savePromise = item.sb.from('tasks').update({ [item.field]: v }).eq('id', item.taskId)
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Timeout')), 10000)
+    )
+    const { error } = await Promise.race([savePromise, timeoutPromise])
     if (error) {
       console.warn(`[saveQueue] Error guardando ${item.field} de ${item.taskId}:`, error.message)
       return false
