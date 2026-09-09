@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useStore } from '../store/index.js'
 import { useAuth } from '../store/auth.js'
 import { sb } from '../lib/supabase.js'
-import { isOverdue, formatDate } from '../lib/utils.js'
+import { isOverdue, formatDate, fetchAllRows } from '../lib/utils.js'
 
 /**
  * Dashboard de gestión en la home.
@@ -22,15 +22,14 @@ export function HomeDashboard() {
 
   useEffect(() => {
     if (!canEdit || projects.length === 0) { setLoading(false); return }
-    // Cargar solo tareas que se crucen con el año en curso:
-    // end_date >= 1/1/YYYY (no terminaron antes del año)
-    // start_date <= 31/12/YYYY (no arrancan después del año)
-    sb.from('tasks')
-      .select('id,name,status,progress,end_date,assigned_to,is_milestone,project_id')
-      .gte('end_date', yearStart)
-      .lte('start_date', yearEnd)
-      .limit(1000)
-      .then(({ data }) => { setTasks(data || []); setLoading(false) })
+    // Cargar tareas que se crucen con el año en curso, paginando
+    fetchAllRows(
+      sb.from('tasks')
+        .select('id,name,status,progress,end_date,assigned_to,is_milestone,project_id')
+        .gte('end_date', yearStart)
+        .lte('start_date', yearEnd)
+    )
+      .then(rows => { setTasks(rows); setLoading(false) })
       .catch(() => setLoading(false))
   }, [projects.length, canEdit])
 
