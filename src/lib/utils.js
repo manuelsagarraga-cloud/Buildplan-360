@@ -288,15 +288,18 @@ export function freshness(lastActivity) {
  * Carga TODAS las filas de una query de Supabase, paginando de a 1000.
  * PostgREST tiene un max_rows de 1000 por defecto; esta función lo sortea.
  *
- * Uso: const rows = await fetchAllRows(sb.from('tasks').select('id,name,...'))
+ * queryFn: función que devuelve un query builder FRESCO cada vez.
+ * Uso: const rows = await fetchAllRows(() => sb.from('tasks').select('id,name,...'))
  */
-export async function fetchAllRows(queryBuilder, pageSize = 1000) {
+export async function fetchAllRows(queryFn, pageSize = 1000) {
   let all = []
   let page = 0
   while (true) {
     const from = page * pageSize
     const to = from + pageSize - 1
-    const { data, error } = await queryBuilder.range(from, to)
+    // Crear un builder NUEVO en cada página (el builder de Supabase muta internamente)
+    const builder = typeof queryFn === 'function' ? queryFn() : queryFn
+    const { data, error } = await builder.range(from, to)
     if (error) { console.warn('[fetchAllRows] error:', error.message); break }
     if (!data || data.length === 0) break
     all.push(...data)
