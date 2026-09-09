@@ -25,8 +25,9 @@ let statusListeners = []
 /**
  * Encola un guardado con debounce. Si ya hay un save pendiente para
  * el mismo taskId+field, lo cancela y reprograma.
+ * lastUpdated: el updated_at de la tarea al momento de editarla (para bloqueo optimista).
  */
-export function enqueueSave(taskId, field, value, sb, debounceMs = 500) {
+export function enqueueSave(taskId, field, value, sb, lastUpdated, debounceMs = 500) {
   const key = `${taskId}::${field}`
 
   // Cancelar timer anterior del mismo campo
@@ -43,7 +44,7 @@ export function enqueueSave(taskId, field, value, sb, debounceMs = 500) {
   // Programar el save real con debounce
   pendingTimers[key] = setTimeout(() => {
     delete pendingTimers[key]
-    pendingQueue.push({ taskId, field, value, sb, retries: 0, key, _processing: false })
+    pendingQueue.push({ taskId, field, value, sb, lastUpdated, retries: 0, key, _processing: false })
     processQueue()
   }, debounceMs)
 }
@@ -109,9 +110,12 @@ async function processQueue() {
 
     const success = await attemptSave(item)
 
-    if (success) {
+    if (success === true) {
       pendingQueue.shift()
       notifyStatus(item.taskId, 'ok', item.field)
+    } else if (success === 'conflict') {
+      // Conflicto de edición concurrente — no reintentar, sacar de la cola
+      pendingQueue.shift()
     } else if (item.retries < 5) {
       item.retries++
       item._processing = false
@@ -135,7 +139,25 @@ async function attemptSave(item) {
   try {
     const v = item.value === '' ? null : item.value
 
-    // Timeout de 10 segundos para que no se cuelgue si Supabase no responde
+    // ── Bloqueo optimista: verificar que nadie editó la tarea desde que la cargamos ──
+    if (item.lastUpdated) {
+      const checkPromise = item.sb.from('tasks').select('updated_at').eq('id', item.taskId).single()
+      const checkTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
+      try {
+        const { data: current } = await Promise.race([checkPromise, checkTimeout])
+        if (current && current.updated_at && current.updated_at !== item.lastUpdated) {
+          // Alguien más editó esta tarea → conflicto
+          console.warn(`[saveQueue] Conflicto en tarea ${item.taskId}: updated_at cambió de ${item.lastUpdated} a ${current.updated_at}`)
+          notifyStatus(item.taskId, 'conflict', item.field, 'Otra persona editó esta tarea. Recargá para ver sus cambios.')
+          return 'conflict'
+        }
+      } catch (e) {
+        // Si falla el check, intentar guardar igual (no bloquear por un check fallido)
+        console.warn(`[saveQueue] No se pudo verificar conflicto, guardando igual:`, e.message)
+      }
+    }
+
+    // ── Guardar ──
     const savePromise = item.sb.from('tasks').update({ [item.field]: v }).eq('id', item.taskId)
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Timeout')), 10000)
