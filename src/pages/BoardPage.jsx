@@ -15,7 +15,7 @@ export function BoardPage() {
   useEffect(() => {
     if (projects.length === 0) { setLoading(false); return }
     // Paginar para traer TODAS las tareas (PostgREST corta en 1000)
-    fetchAllRows(sb.from('tasks').select('id,name,status,progress,end_date,start_date,assigned_to,is_milestone,project_id,contratista,rubro'))
+    fetchAllRows(() => sb.from('tasks').select('id,name,status,progress,end_date,start_date,assigned_to,is_milestone,project_id,contratista,rubro'))
       .then(rows => { setTasks(rows); setLoading(false) })
       .catch(() => setLoading(false))
   }, [projects.length])
