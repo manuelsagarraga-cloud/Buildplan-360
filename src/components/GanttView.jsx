@@ -434,8 +434,11 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
       if (status === 'ok') {
         setTimeout(() => setSaving(s => { const n = { ...s }; delete n[taskId]; return n }), 1200)
       } else if (status === 'error') {
-        toast(error || 'No se pudo guardar. Se reintentó 3 veces.', 'error')
+        toast(error || 'No se pudo guardar. Se reintentó 5 veces.', 'error')
         setTimeout(() => setSaving(s => { const n = { ...s }; delete n[taskId]; return n }), 4000)
+      } else if (status === 'conflict') {
+        toast(error || 'Otra persona editó esta tarea. Recargá la página.', 'warning')
+        setTimeout(() => setSaving(s => { const n = { ...s }; delete n[taskId]; return n }), 5000)
       }
     })
     return unsub
@@ -444,14 +447,16 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
   // Guardar con debounce, reintentos y soporte offline
   function quickSave(taskId, field, value) {
     const v = value === '' ? null : value
+    const task = tasks.find(t => t.id === taskId)
+    const lastUpdated = task?.updated_at || null
 
     // Actualización optimista inmediata (la UI refleja el cambio al instante)
     useStore.setState(s => ({
       tasks: s.tasks.map(t => t.id === taskId ? { ...t, [field]: v } : t)
     }))
 
-    // Encolar el save real (debounce 500ms, 3 reintentos)
-    enqueueSave(taskId, field, value, sb)
+    // Encolar el save real (debounce 500ms, 5 reintentos, bloqueo optimista)
+    enqueueSave(taskId, field, value, sb, lastUpdated)
   }
 
   return (
