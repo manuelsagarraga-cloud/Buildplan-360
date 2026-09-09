@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useStore } from '../store/index.js'
 import { sb } from '../lib/supabase.js'
-import { isOverdue, formatDate } from '../lib/utils.js'
+import { isOverdue, formatDate, fetchAllRows } from '../lib/utils.js'
 
 /**
  * Tablero global de empresa — vista de todos los proyectos a la vez.
@@ -14,10 +14,10 @@ export function BoardPage() {
 
   useEffect(() => {
     if (projects.length === 0) { setLoading(false); return }
-    sb.from('tasks')
-      .select('id,name,status,progress,end_date,start_date,assigned_to,is_milestone,project_id,contratista,rubro')
-      .limit(5000)
-      .then(({ data }) => { setTasks(data || []); setLoading(false) })
+    // Paginar para traer TODAS las tareas (PostgREST corta en 1000)
+    fetchAllRows(sb.from('tasks').select('id,name,status,progress,end_date,start_date,assigned_to,is_milestone,project_id,contratista,rubro'))
+      .then(rows => { setTasks(rows); setLoading(false) })
+      .catch(() => setLoading(false))
   }, [projects.length])
 
   const stats = useMemo(() => {
