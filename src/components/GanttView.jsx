@@ -5,6 +5,7 @@ import { DEP_TYPE_ABBR, sb } from '../lib/supabase.js'
 import { GanttSvg } from './GanttSvg.jsx'
 import BaselinePanel from './BaselinePanel.jsx'
 import { toast } from './Toast.jsx'
+import { enqueueSave, subscribeSaveStatus, getPendingCount } from '../lib/saveQueue.js'
 import { ProjectSummary } from './ProjectSummary.jsx'
 import { ListView, KanbanView } from './TaskViews.jsx'
 import { InlineText } from './InlineText.jsx'
@@ -417,41 +418,33 @@ export function GanttView() {
 // ── Gantt split view ─────────────────────────────────────────
 function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, leftPaneW, startResize, colTpl, leftBodyRef, rightBodyRef, hiddenCols, ganttHidden }) {
   const { members, toggleCollapsed, togglePinned, pinnedTaskIds, editMode, tasks, deps, viewMode, currentProject, openTaskModal, loadProject } = useStore()
-  const [saving, setSaving] = useState({}) // { [taskId]: 'saving' | 'ok' | 'error' }
+  const [saving, setSaving] = useState({}) // { [taskId]: 'saving' | 'ok' | 'error' | 'pending' }
 
-  // Guardar un campo único: feedback visual, timeout, sin recarga completa
-  async function quickSave(taskId, field, value) {
-    setSaving(s => ({ ...s, [taskId]: 'saving' }))
-    try {
-      const v = value === '' ? null : value
-
-      // Timeout de seguridad (8 segundos)
-      const savePromise = sb.from('tasks').update({ [field]: v }).eq('id', taskId)
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout: la conexión tardó demasiado')), 8000)
-      )
-      const { error } = await Promise.race([savePromise, timeoutPromise])
-
-      if (error) {
-        toast('No se pudo guardar: ' + error.message, 'error')
-        setSaving(s => ({ ...s, [taskId]: 'error' }))
-        setTimeout(() => setSaving(s => { const n = { ...s }; delete n[taskId]; return n }), 3000)
-        return
+  // Suscribirse a la cola de guardado para feedback visual
+  useEffect(() => {
+    const unsub = subscribeSaveStatus(({ taskId, status, field, error }) => {
+      setSaving(s => ({ ...s, [taskId]: status }))
+      if (status === 'ok') {
+        setTimeout(() => setSaving(s => { const n = { ...s }; delete n[taskId]; return n }), 1200)
+      } else if (status === 'error') {
+        toast(error || 'No se pudo guardar. Se reintentó 3 veces.', 'error')
+        setTimeout(() => setSaving(s => { const n = { ...s }; delete n[taskId]; return n }), 4000)
       }
+    })
+    return unsub
+  }, [])
 
-      // Actualización optimista (sin recargar todo el proyecto)
-      useStore.setState(s => ({
-        tasks: s.tasks.map(t => t.id === taskId ? { ...t, [field]: v } : t)
-      }))
+  // Guardar con debounce, reintentos y soporte offline
+  function quickSave(taskId, field, value) {
+    const v = value === '' ? null : value
 
-      setSaving(s => ({ ...s, [taskId]: 'ok' }))
-      setTimeout(() => setSaving(s => { const n = { ...s }; delete n[taskId]; return n }), 1200)
-    } catch (e) {
-      console.error('quickSave error', e)
-      toast('Error al guardar: ' + (e.message || 'Error desconocido'), 'error')
-      setSaving(s => ({ ...s, [taskId]: 'error' }))
-      setTimeout(() => setSaving(s => { const n = { ...s }; delete n[taskId]; return n }), 3000)
-    }
+    // Actualización optimista inmediata (la UI refleja el cambio al instante)
+    useStore.setState(s => ({
+      tasks: s.tasks.map(t => t.id === taskId ? { ...t, [field]: v } : t)
+    }))
+
+    // Encolar el save real (debounce 500ms, 3 reintentos)
+    enqueueSave(taskId, field, value, sb)
   }
 
   return (
