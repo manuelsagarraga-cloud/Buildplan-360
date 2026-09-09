@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { useStore } from '../store/index.js'
-import { getVisibleTasks, businessDays, formatDate, isOverdue, addDays, getSuccessorChain, shiftDateStr, diffDays } from '../lib/utils.js'
+import { getVisibleTasks, businessDays, addBusinessDays, formatDate, isOverdue, addDays, getSuccessorChain, shiftDateStr, diffDays } from '../lib/utils.js'
 import { DEP_TYPE_ABBR, sb } from '../lib/supabase.js'
 import { GanttSvg } from './GanttSvg.jsx'
 import BaselinePanel from './BaselinePanel.jsx'
@@ -492,7 +492,8 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
               const m = t.assigned_to ? members.find(x => x.id === t.assigned_to) : null
               const indent = t.depth * 20
               const isMilestone = t.is_milestone || t.start_date === t.end_date
-              const dur = isMilestone ? '0d' : businessDays(t.start_date, t.end_date) + 'dh'
+              const durDays = isMilestone ? 0 : businessDays(t.start_date, t.end_date)
+              const durLabel = isMilestone ? '0d' : durDays + 'd'
               const preds = predMap[t.id] || []
               const isPinned = pinnedTaskIds.has(t.id)
               const isSelected = selectedIds.has(t.id)
@@ -530,7 +531,30 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
                       style={{ marginLeft: 'auto', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 12, lineHeight: 1, padding: '0 4px', color: 'var(--text-3)', flexShrink: 0 }}
                     >✎</button>
                   </div>
-                  {!hiddenCols.has('dur') && <div className="cell" style={{ fontSize: 10, color: 'var(--text-2)', fontFamily: 'JetBrains Mono, monospace', justifyContent: 'center' }}>{dur}</div>}
+                  {!hiddenCols.has('dur') && (
+                    <div className="cell" style={{ fontSize: 10, color: 'var(--text-2)', fontFamily: 'JetBrains Mono, monospace', justifyContent: 'center' }} onClick={e => e.stopPropagation()}>
+                      {editMode && !t._isSummary && !isMilestone ? (
+                        <input
+                          type="number"
+                          className="inline-pct"
+                          min="1"
+                          value={durDays}
+                          disabled={saving[t.id] === 'saving'}
+                          style={{ width: 38, textAlign: 'center' }}
+                          onClick={e => e.target.select()}
+                          title="Cambiar duración en días hábiles → recalcula fecha fin"
+                          onChange={e => {
+                            const newDur = Math.max(1, parseInt(e.target.value) || 1)
+                            // Calcular nueva fecha de fin sumando días hábiles desde start_date
+                            const newEnd = addBusinessDays(t.start_date, newDur)
+                            if (newEnd) quickSave(t.id, 'end_date', newEnd)
+                          }}
+                        />
+                      ) : (
+                        <span>{durLabel}</span>
+                      )}
+                    </div>
+                  )}
                   {!hiddenCols.has('resp') && (
                     <div className="cell assignee-cell" onClick={e => e.stopPropagation()}>
                       {editMode ? (
