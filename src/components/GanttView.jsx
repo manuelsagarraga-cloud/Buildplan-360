@@ -11,12 +11,13 @@ import { ListView, KanbanView } from './TaskViews.jsx'
 import { InlineText } from './InlineText.jsx'
 
 const DEFAULT_WIDTHS = {
-  '#': 26, name: 0, dur: 46, resp: 110, start: 82, end: 82,
+  '#': 26, wbs: 56, name: 0, dur: 46, resp: 110, start: 82, end: 82,
   pred: 72, pct: 36, nivel: 110, rubro: 100, contratista: 100, pin: 36,
 }
 
 const COL_DEFS = [
   { key: '#',           label: '#',           toggle: false },
+  { key: 'wbs',         label: 'WBS',         toggle: true },
   { key: 'name',        label: 'Tarea',        toggle: false },
   { key: 'dur',         label: 'Duración',     toggle: true },
   { key: 'resp',        label: 'Responsable',  toggle: true },
@@ -180,7 +181,7 @@ export function GanttView() {
     const sel = [...selectedIds]
     if (sel.length === 0) return toast('Seleccioná tareas con el checkbox (Shift+click para rango)', 'warning')
     try {
-      // Ordenar por posición visual (de abajo hacia arriba para evitar conflictos de padres)
+      // Ordenar por posición visual (de abajo hacia arriba para evitar conflictos)
       const ordered = sel
         .map(id => ({ id, idx: visibleTasks.findIndex(t => t.id === id) }))
         .filter(x => x.idx !== -1)
@@ -188,11 +189,12 @@ export function GanttView() {
 
       let done = 0, skipped = 0
       for (const { id } of ordered) {
-        const result = await indentTask(id)
+        const result = await indentTask(id, true) // skipReload=true
         if (result === 'ok') done++
         else skipped++
       }
-      if (done > 0) toast(`${done} tarea(s) sangrada(s) ✓${skipped > 0 ? ` (${skipped} no se pudieron mover)` : ''}`)
+      await loadProject(currentProject.id) // un solo reload al final
+      if (done > 0) toast(`${done} tarea(s) sangrada(s) ✓${skipped > 0 ? ` (${skipped} no se pudieron)` : ''}`)
       else toast('Ninguna tarea se pudo sangrar — verificá que no sean las primeras de su grupo', 'warning')
     } catch (e) {
       toast('Error al sangrar: ' + (e.message || ''), 'error')
@@ -202,7 +204,6 @@ export function GanttView() {
     const sel = [...selectedIds]
     if (sel.length === 0) return toast('Seleccioná tareas con el checkbox (Shift+click para rango)', 'warning')
     try {
-      // Ordenar por posición visual (de arriba hacia abajo)
       const ordered = sel
         .map(id => ({ id, idx: visibleTasks.findIndex(t => t.id === id) }))
         .filter(x => x.idx !== -1)
@@ -210,11 +211,12 @@ export function GanttView() {
 
       let done = 0, skipped = 0
       for (const { id } of ordered) {
-        const result = await outdentTask(id)
+        const result = await outdentTask(id, true) // skipReload=true
         if (result === 'ok') done++
         else skipped++
       }
-      if (done > 0) toast(`${done} tarea(s) con sangría quitada ✓${skipped > 0 ? ` (${skipped} ya estaban en raíz)` : ''}`)
+      await loadProject(currentProject.id) // un solo reload al final
+      if (done > 0) toast(`${done} tarea(s) con sangría quitada ✓${skipped > 0 ? ` (${skipped} ya en raíz)` : ''}`)
       else toast('Ninguna tarea se pudo mover — ya están en el nivel raíz', 'warning')
     } catch (e) {
       toast('Error al quitar sangría: ' + (e.message || ''), 'error')
@@ -616,6 +618,7 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
       <div className="left-pane">
         <div className="pane-header left-header" style={{ '--col-tpl': colTpl }}>
           <div>#</div>
+          {!hiddenCols.has('wbs') && <div>WBS</div>}
           <div>Tarea</div>
           {!hiddenCols.has('dur') && <div>Dur</div>}
           {!hiddenCols.has('resp') && <div>Resp.</div>}
@@ -656,6 +659,11 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
                       : saving[t.id] === 'error' ? <span className="save-indicator save-err" title="Error al guardar">✗</span>
                       : (i + 1)}
                   </div>
+                  {!hiddenCols.has('wbs') && (
+                    <div className="cell" style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'JetBrains Mono, monospace', justifyContent: 'center' }} title={`WBS: ${t.wbs}`}>
+                      {t.wbs}
+                    </div>
+                  )}
                   <div className="cell task-name-cell" onClick={e => { if (editMode) e.stopPropagation() }}>
                     <span className="indent" style={{ width: indent }} />
                     {t.hasChildren
