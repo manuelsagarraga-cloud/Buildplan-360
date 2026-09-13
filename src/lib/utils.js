@@ -309,10 +309,6 @@ export function freshness(lastActivity) {
 
 /**
  * Carga TODAS las filas de una query de Supabase, paginando de a 1000.
- * PostgREST tiene un max_rows de 1000 por defecto; esta función lo sortea.
- *
- * queryFn: función que devuelve un query builder FRESCO cada vez.
- * Uso: const rows = await fetchAllRows(() => sb.from('tasks').select('id,name,...'))
  */
 export async function fetchAllRows(queryFn, pageSize = 1000) {
   let all = []
@@ -320,7 +316,6 @@ export async function fetchAllRows(queryFn, pageSize = 1000) {
   while (true) {
     const from = page * pageSize
     const to = from + pageSize - 1
-    // Crear un builder NUEVO en cada página (el builder de Supabase muta internamente)
     const builder = typeof queryFn === 'function' ? queryFn() : queryFn
     const { data, error } = await builder.range(from, to)
     if (error) { console.warn('[fetchAllRows] error:', error.message); break }
@@ -330,4 +325,70 @@ export async function fetchAllRows(queryFn, pageSize = 1000) {
     page++
   }
   return all
+}
+
+/**
+ * Recalcula sucesoras en cascada cuando cambia el end_date de una tarea.
+ * Función pura: recibe datos, devuelve lista de cambios.
+ * NO escribe en Supabase — el caller decide cómo guardar.
+ * 
+ * Retorna: [{ id, start_date, end_date, name }]
+ */
+export function computeCascade(changedTaskId, newEndDate, allTasks, allDeps) {
+  const visited = new Set([changedTaskId])
+  const queue = [{ predId: changedTaskId, predEnd: newEndDate }]
+  const changes = []
+
+  while (queue.length > 0) {
+    const { predId, predEnd } = queue.shift()
+    const succDeps = allDeps.filter(d => d.predecessor_id === predId)
+
+    for (const dep of succDeps) {
+      if (visited.has(dep.successor_id)) continue
+      const succ = allTasks.find(t => t.id === dep.successor_id)
+      if (!succ) continue
+
+      const prev = changes.find(c => c.id === succ.id)
+      const succStart = prev ? prev.start_date : succ.start_date
+      const succEnd = prev ? prev.end_date : succ.end_date
+
+      const lag = dep.lag_days || 0
+      const type = dep.dependency_type || 'finish_to_start'
+      let newStart = null
+
+      if (type === 'finish_to_start') {
+        newStart = nextBusinessDayAfter(predEnd, lag)
+      } else if (type === 'start_to_start') {
+        const pred = allTasks.find(t => t.id === predId)
+        const predStart = pred?.start_date || predEnd
+        newStart = lag > 0 ? nextBusinessDayAfter(predStart, lag - 1) : predStart
+      } else if (type === 'finish_to_finish') {
+        const dur = businessDays(succStart, succEnd)
+        const targetEnd = lag > 0 ? nextBusinessDayAfter(predEnd, lag - 1) : predEnd
+        const delta = diffDays(succEnd, targetEnd)
+        if (delta === 0) continue
+        newStart = shiftDateStr(succStart, delta)
+        const newEnd = targetEnd
+        if (newStart === succStart) continue
+        if (prev) { prev.start_date = newStart; prev.end_date = newEnd }
+        else changes.push({ id: succ.id, start_date: newStart, end_date: newEnd, name: succ.name })
+        visited.add(succ.id)
+        queue.push({ predId: succ.id, predEnd: newEnd })
+        continue
+      }
+
+      if (!newStart || newStart === succStart) continue
+
+      const dur = businessDays(succStart, succEnd)
+      const newEnd = addBusinessDays(newStart, Math.max(dur, 1))
+
+      if (prev) { prev.start_date = newStart; prev.end_date = newEnd }
+      else changes.push({ id: succ.id, start_date: newStart, end_date: newEnd, name: succ.name })
+
+      visited.add(succ.id)
+      queue.push({ predId: succ.id, predEnd: newEnd })
+    }
+  }
+
+  return changes
 }
