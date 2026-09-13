@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { useStore } from '../store/index.js'
-import { getVisibleTasks, businessDays, addBusinessDays, nextBusinessDayAfter, formatDate, isOverdue, addDays, getSuccessorChain, shiftDateStr, diffDays } from '../lib/utils.js'
+import { getVisibleTasks, businessDays, addBusinessDays, nextBusinessDayAfter, formatDate, isOverdue, addDays, getSuccessorChain, shiftDateStr, diffDays, computeCascade } from '../lib/utils.js'
 import { DEP_TYPE_ABBR, sb } from '../lib/supabase.js'
 import { GanttSvg } from './GanttSvg.jsx'
 import BaselinePanel from './BaselinePanel.jsx'
@@ -464,7 +464,7 @@ function DurationInput({ days, disabled, onCommit }) {
 // ── Gantt split view ─────────────────────────────────────────
 function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, leftPaneW, startResize, colTpl, leftBodyRef, rightBodyRef, hiddenCols, ganttHidden }) {
   const { members, toggleCollapsed, togglePinned, pinnedTaskIds, editMode, tasks, deps, viewMode, currentProject, openTaskModal, loadProject } = useStore()
-  const [saving, setSaving] = useState({}) // { [taskId]: 'saving' | 'ok' | 'error' | 'pending' }
+  const [saving, setSaving] = useState({})
 
   // Suscribirse a la cola de guardado para feedback visual
   useEffect(() => {
@@ -473,121 +473,78 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
       if (status === 'ok') {
         setTimeout(() => setSaving(s => { const n = { ...s }; delete n[taskId]; return n }), 1200)
       } else if (status === 'error') {
-        toast(error || 'No se pudo guardar. Se reintentó 5 veces.', 'error')
+        toast(error || 'No se pudo guardar.', 'error')
         setTimeout(() => setSaving(s => { const n = { ...s }; delete n[taskId]; return n }), 4000)
-      } else if (status === 'conflict') {
-        toast(error || 'Otra persona editó esta tarea. Recargá la página.', 'warning')
-        setTimeout(() => setSaving(s => { const n = { ...s }; delete n[taskId]; return n }), 5000)
       }
     })
     return unsub
   }, [])
 
-  // Guardar con debounce, reintentos y soporte offline.
-  // Si cambia end_date o start_date, recalcula sucesoras en cascada.
+  // ══════════════════════════════════════════════════════════════
+  //  quickSave — Guardar un campo, con cascada automática si
+  //  cambia start_date o end_date.
+  // ══════════════════════════════════════════════════════════════
   function quickSave(taskId, field, value) {
     const v = value === '' ? null : value
-    // Leer estado fresco del store (no del render, que puede estar viejo)
-    const freshTasks = useStore.getState().tasks
+    const { tasks: freshTasks } = useStore.getState()
     const task = freshTasks.find(t => t.id === taskId)
-    const lastUpdated = task?.updated_at || null
+    if (!task) return
 
-    // Actualización optimista inmediata
-    useStore.setState(s => ({
-      tasks: s.tasks.map(t => t.id === taskId ? { ...t, [field]: v } : t)
-    }))
+    // ── Si cambió start_date, mantener duración y mover end_date ──
+    if (field === 'start_date' && v && task.start_date !== v) {
+      const dur = businessDays(task.start_date, task.end_date)
+      const newEnd = addBusinessDays(v, Math.max(dur, 1))
 
-    // Encolar el save
-    enqueueSave(taskId, field, value, sb, lastUpdated)
+      useStore.setState(s => ({
+        tasks: s.tasks.map(t => t.id === taskId ? { ...t, start_date: v, end_date: newEnd } : t)
+      }))
+      enqueueSave(taskId, 'start_date', v, sb)
+      enqueueSave(taskId, 'end_date', newEnd, sb)
 
-    // ── Cascada de dependencias ──
-    // Si cambió end_date, recalcular sucesoras encadenadas
-    if ((field === 'end_date') && v && task) {
-      const oldEnd = task.end_date
-      if (oldEnd && oldEnd !== v) {
-        console.log(`[cascade] Disparando: tarea ${task.name}, end ${oldEnd} → ${v}`)
-        cascadeFromTask(taskId, v)
+      // Cascada desde el nuevo end_date
+      if (newEnd !== task.end_date) {
+        runCascade(taskId, newEnd)
       }
-    }
-  }
-
-  // Recalcula sucesoras en cascada cuando cambia el end_date de una tarea.
-  // Respeta el tipo de dependencia y el lag. Mantiene la duración de cada sucesora.
-  // Junta todos los cambios y los guarda en batch (1 save por tarea, sin chequeo de conflicto).
-  async function cascadeFromTask(changedTaskId, newEndDate) {
-    const visited = new Set()
-    const bfsQueue = [{ taskId: changedTaskId, endDate: newEndDate }]
-    const changes = [] // [{ id, start_date, end_date }]
-
-    // Usar el estado optimista más reciente de las tareas
-    const { tasks: currentTasks, deps: currentDeps } = useStore.getState()
-
-    while (bfsQueue.length > 0) {
-      const { taskId: predId, endDate: predEnd } = bfsQueue.shift()
-      if (visited.has(predId)) continue
-      visited.add(predId)
-
-      const successorDeps = currentDeps.filter(d => d.predecessor_id === predId)
-
-      for (const dep of successorDeps) {
-        // Buscar la tarea en los cambios ya calculados o en el estado original
-        const existing = changes.find(c => c.id === dep.successor_id)
-        const succ = existing
-          ? { ...currentTasks.find(t => t.id === dep.successor_id), start_date: existing.start_date, end_date: existing.end_date }
-          : currentTasks.find(t => t.id === dep.successor_id)
-        if (!succ || visited.has(succ.id)) continue
-
-        const lag = dep.lag_days || 0
-        const type = dep.dependency_type || 'finish_to_start'
-        let newSuccStart = null
-
-        if (type === 'finish_to_start') {
-          newSuccStart = nextBusinessDayAfter(predEnd, lag)
-        } else if (type === 'start_to_start') {
-          const pred = currentTasks.find(t => t.id === predId)
-          if (pred) newSuccStart = lag > 0 ? nextBusinessDayAfter(pred.start_date, lag - 1) : pred.start_date
-        }
-
-        if (!newSuccStart || newSuccStart === succ.start_date) continue
-
-        const succDuration = businessDays(succ.start_date, succ.end_date)
-        const newSuccEnd = addBusinessDays(newSuccStart, Math.max(succDuration, 1))
-
-        changes.push({ id: succ.id, start_date: newSuccStart, end_date: newSuccEnd })
-        bfsQueue.push({ taskId: succ.id, endDate: newSuccEnd })
-      }
-    }
-
-    if (changes.length === 0) {
-      console.log('[cascade] Sin sucesoras que mover')
       return
     }
 
-    // 1) Actualización optimista: un solo setState con todos los cambios
-    const changeMap = {}
-    changes.forEach(c => { changeMap[c.id] = c })
+    // ── Actualización optimista ──
     useStore.setState(s => ({
-      tasks: s.tasks.map(t => changeMap[t.id]
-        ? { ...t, start_date: changeMap[t.id].start_date, end_date: changeMap[t.id].end_date }
-        : t
-      )
+      tasks: s.tasks.map(t => t.id === taskId ? { ...t, [field]: v } : t)
+    }))
+    enqueueSave(taskId, field, v, sb)
+
+    // ── Si cambió end_date, cascadear ──
+    if (field === 'end_date' && v && task.end_date !== v) {
+      runCascade(taskId, v)
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  //  runCascade — Wrapper que usa computeCascade (utils.js),
+  //  aplica optimistic update, y guarda en Supabase.
+  // ══════════════════════════════════════════════════════════════
+  async function runCascade(changedTaskId, newEndDate) {
+    const { tasks: allTasks, deps: allDeps } = useStore.getState()
+    const changes = computeCascade(changedTaskId, newEndDate, allTasks, allDeps)
+    if (changes.length === 0) return
+
+    // Optimistic update
+    const map = {}; changes.forEach(c => { map[c.id] = c })
+    useStore.setState(s => ({
+      tasks: s.tasks.map(t => map[t.id] ? { ...t, start_date: map[t.id].start_date, end_date: map[t.id].end_date } : t)
     }))
 
-    // 2) Guardar en Supabase: un update por tarea (start+end juntos, sin conflicto)
-    toast(`Cascada: recalculando ${changes.length} tarea(s)…`, 'success')
-    let saved = 0, failed = 0
+    // Save to Supabase
+    toast(`Cascada: ${changes.length} tarea(s)…`, 'success')
+    let ok = 0, fail = 0
     for (const c of changes) {
       try {
         const { error } = await sb.from('tasks').update({ start_date: c.start_date, end_date: c.end_date }).eq('id', c.id)
-        if (error) { failed++; console.warn('[cascade] error:', c.id, error.message) }
-        else saved++
-      } catch (e) { failed++; console.warn('[cascade] excepción:', c.id, e.message) }
+        if (error) { fail++; console.warn('[cascade] fail:', c.name, error.message) } else ok++
+      } catch (e) { fail++; console.warn('[cascade] error:', c.name, e.message) }
     }
-    if (failed > 0) {
-      toast(`Cascada: ${saved} guardadas, ${failed} con error`, 'warning')
-    } else {
-      toast(`Cascada: ${saved} tarea(s) actualizadas ✓`, 'success')
-    }
+    toast(fail > 0 ? `Cascada: ${ok} ok, ${fail} con error` : `Cascada: ${ok} tarea(s) ✓`, fail > 0 ? 'warning' : 'success')
   }
 
   return (
@@ -720,17 +677,13 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
                   {!hiddenCols.has('pct') && (
                     <div className="cell" style={{ justifyContent: 'center' }} onClick={e => e.stopPropagation()}>
                       {editMode ? (
-                        <input
-                          type="number" min="0" max="100"
-                          className="inline-pct"
-                          value={t.progress || 0}
+                        <DurationInput
+                          days={t.progress || 0}
                           disabled={saving[t.id] === 'saving'}
-                          onChange={e => {
-                            const v = Math.min(100, Math.max(0, parseInt(e.target.value) || 0))
-                            quickSave(t.id, 'progress', v)
+                          onCommit={v => {
+                            const clamped = Math.min(100, Math.max(0, v))
+                            quickSave(t.id, 'progress', clamped)
                           }}
-                          onClick={e => e.target.select()}
-                          title="Cambiar avance %"
                         />
                       ) : (
                         <span className="pct" style={{ fontSize: 10 }}>{t.progress || 0}</span>
@@ -798,37 +751,19 @@ function GanttSplitView({ visibleTasks, predMap, selectedIds, toggleSelect, left
               onTaskDrag={async (taskId, newStart, newEnd) => {
                 try {
                   const moved = tasks.find(x => x.id === taskId)
-                  const delta = moved?.start_date ? diffDays(moved.start_date, newStart) : 0
 
-                  // Snapshot para deshacer: la tarea movida (valores previos)
-                  const undoChanges = [{ id: taskId, start_date: moved?.start_date, end_date: moved?.end_date }]
-
+                  // Guardar la tarea arrastrada
                   await sb.from('tasks').update({ start_date: newStart, end_date: newEnd }).eq('id', taskId)
+                  useStore.setState(s => ({
+                    tasks: s.tasks.map(t => t.id === taskId ? { ...t, start_date: newStart, end_date: newEnd } : t)
+                  }))
 
-                  // Recálculo en cascada: ofrecer mover las sucesoras encadenadas
-                  if (delta !== 0) {
-                    const chain = getSuccessorChain([taskId], deps)
-                    if (chain.size > 0) {
-                      const follow = window.confirm(
-                        `"${moved?.name || 'Esta tarea'}" tiene ${chain.size} tarea(s) sucesora(s) encadenada(s).\n\n` +
-                        `¿Moverlas también ${delta > 0 ? '+' : ''}${delta} día(s) para mantener el cronograma consistente?`
-                      )
-                      if (follow) {
-                        const succ = tasks.filter(x => chain.has(x.id))
-                        succ.forEach(s => undoChanges.push({ id: s.id, start_date: s.start_date, end_date: s.end_date }))
-                        await Promise.all(succ.map(s => {
-                          const patch = {}
-                          if (s.start_date) patch.start_date = shiftDateStr(s.start_date, delta)
-                          if (s.end_date) patch.end_date = shiftDateStr(s.end_date, delta)
-                          return Object.keys(patch).length
-                            ? sb.from('tasks').update(patch).eq('id', s.id)
-                            : Promise.resolve()
-                        }))
-                      }
-                    }
+                  // Cascada automática (misma lógica que edición inline)
+                  if (moved?.end_date !== newEnd) {
+                    await runCascade(taskId, newEnd)
                   }
 
-                  pushUndo(`Mover "${moved?.name || 'tarea'}"`, undoChanges)
+                  // Recargar para sincronizar todo
                   await loadProject(currentProject.id)
                 } catch (e) {
                   console.error('Error al mover tarea:', e)
