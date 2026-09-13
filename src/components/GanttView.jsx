@@ -178,13 +178,47 @@ export function GanttView() {
   // ── Indent/Outdent/Link ──────────────────────────────────────
   async function handleIndent() {
     const sel = [...selectedIds]
-    if (sel.length !== 1) return toast('Seleccioná exactamente 1 tarea para sangrar', 'warning')
-    await indentTask(sel[0])
+    if (sel.length === 0) return toast('Seleccioná tareas con el checkbox (Shift+click para rango)', 'warning')
+    try {
+      // Ordenar por posición visual (de abajo hacia arriba para evitar conflictos de padres)
+      const ordered = sel
+        .map(id => ({ id, idx: visibleTasks.findIndex(t => t.id === id) }))
+        .filter(x => x.idx !== -1)
+        .sort((a, b) => b.idx - a.idx)
+
+      let done = 0, skipped = 0
+      for (const { id } of ordered) {
+        const result = await indentTask(id)
+        if (result === 'ok') done++
+        else skipped++
+      }
+      if (done > 0) toast(`${done} tarea(s) sangrada(s) ✓${skipped > 0 ? ` (${skipped} no se pudieron mover)` : ''}`)
+      else toast('Ninguna tarea se pudo sangrar — verificá que no sean las primeras de su grupo', 'warning')
+    } catch (e) {
+      toast('Error al sangrar: ' + (e.message || ''), 'error')
+    }
   }
   async function handleOutdent() {
     const sel = [...selectedIds]
-    if (sel.length !== 1) return toast('Seleccioná exactamente 1 tarea para outdent', 'warning')
-    await outdentTask(sel[0])
+    if (sel.length === 0) return toast('Seleccioná tareas con el checkbox (Shift+click para rango)', 'warning')
+    try {
+      // Ordenar por posición visual (de arriba hacia abajo)
+      const ordered = sel
+        .map(id => ({ id, idx: visibleTasks.findIndex(t => t.id === id) }))
+        .filter(x => x.idx !== -1)
+        .sort((a, b) => a.idx - b.idx)
+
+      let done = 0, skipped = 0
+      for (const { id } of ordered) {
+        const result = await outdentTask(id)
+        if (result === 'ok') done++
+        else skipped++
+      }
+      if (done > 0) toast(`${done} tarea(s) con sangría quitada ✓${skipped > 0 ? ` (${skipped} ya estaban en raíz)` : ''}`)
+      else toast('Ninguna tarea se pudo mover — ya están en el nivel raíz', 'warning')
+    } catch (e) {
+      toast('Error al quitar sangría: ' + (e.message || ''), 'error')
+    }
   }
   async function handleLink() {
     const sel = [...selectedIds]
@@ -197,13 +231,34 @@ export function GanttView() {
     toast('Tareas vinculadas (FC)')
   }
 
+  const lastClickedRef = useRef(null) // para Shift+click
+
   function toggleSelect(id, e) {
     e.stopPropagation()
+    const isShift = e.shiftKey
+
     setSelectedIds(prev => {
       const next = new Set(prev)
-      if (next.has(id)) next.delete(id); else next.add(id)
+
+      if (isShift && lastClickedRef.current) {
+        // Shift+click: seleccionar rango desde última selección hasta esta
+        const fromIdx = visibleTasks.findIndex(t => t.id === lastClickedRef.current)
+        const toIdx = visibleTasks.findIndex(t => t.id === id)
+        if (fromIdx !== -1 && toIdx !== -1) {
+          const start = Math.min(fromIdx, toIdx)
+          const end = Math.max(fromIdx, toIdx)
+          for (let i = start; i <= end; i++) {
+            next.add(visibleTasks[i].id)
+          }
+        }
+      } else {
+        // Click normal: toggle individual
+        if (next.has(id)) next.delete(id); else next.add(id)
+      }
+
       return next
     })
+    lastClickedRef.current = id
   }
 
   // ── Edición masiva ───────────────────────────────────────────
