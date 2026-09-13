@@ -143,19 +143,23 @@ export function getVisibleTasks(allTasks, filters = {}, collapsed = new Set()) {
     return true
   }
 
-  function walk(task, depth) {
+  function walk(task, depth, parentWbs) {
     const hasChildren = !!(childrenMap[task.id] && childrenMap[task.id].length)
     const t = hasChildren ? computeRollup(task, childrenMap) : task
     t.depth = depth
     t.hasChildren = hasChildren
     t.isCollapsed = collapsed.has(task.id)
+    // WBS: número jerárquico basado en la posición entre hermanos
+    const siblings = childrenMap[task.parent_task_id || 'ROOT'] || []
+    const siblingIdx = siblings.findIndex(s => s.id === task.id) + 1
+    t.wbs = parentWbs ? `${parentWbs}.${siblingIdx}` : String(siblingIdx)
     if (!hasChildren && !passesFilter(t)) return
     result.push(t)
     if (hasChildren && !collapsed.has(task.id)) {
-      childrenMap[task.id].forEach(child => walk(child, depth + 1))
+      childrenMap[task.id].forEach(child => walk(child, depth + 1, t.wbs))
     }
   }
-  roots.forEach(r => walk(r, 0))
+  roots.forEach(r => walk(r, 0, ''))
   return result
 }
 
