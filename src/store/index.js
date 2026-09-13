@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { sb } from '../lib/supabase'
-import { buildHierarchy, fetchAllRows } from '../lib/utils.js'
+import { buildHierarchy, fetchAllRows, computeCascade } from '../lib/utils.js'
 
 export const useStore = create((set, get) => ({
   // ─── Connection ─────────────────────────────────────────────
@@ -286,7 +286,24 @@ export const useStore = create((set, get) => ({
         await sb.from('task_dependencies').insert(inserts)
       }
     }
+
+    // Recargar proyecto para tener el estado fresco
     await get().reloadProject()
+
+    // Cascada: si cambió end_date, recalcular sucesoras
+    if (id && payload.end_date) {
+      const oldTask = get().tasks.find(t => t.id === id) // ya recargado
+      // Comparar con la tarea guardada — si end_date es diferente al original, cascadear
+      const { tasks: freshTasks, deps: freshDeps } = get()
+      const cascade = computeCascade(savedId, payload.end_date, freshTasks, freshDeps)
+      if (cascade.length > 0) {
+        for (const c of cascade) {
+          await sb.from('tasks').update({ start_date: c.start_date, end_date: c.end_date }).eq('id', c.id)
+        }
+        await get().reloadProject()
+      }
+    }
+
     return savedId
   },
 
