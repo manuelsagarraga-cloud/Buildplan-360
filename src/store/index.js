@@ -318,27 +318,32 @@ export const useStore = create((set, get) => ({
     const { tasks } = get()
     const { childrenMap } = buildHierarchy(tasks)
     const task = tasks.find(t => t.id === taskId)
-    if (!task) return
+    if (!task) return 'not_found'
 
     // Find siblings at same level and same parent
     const siblings = (childrenMap[task.parent_task_id || 'ROOT'] || [])
       .sort((a, b) => (a.order_index || 0) - (b.order_index || 0))
     const idx = siblings.findIndex(s => s.id === taskId)
-    if (idx === 0) return // no previous sibling to nest under
+    if (idx === 0) return 'first' // no previous sibling to nest under
 
     const newParent = siblings[idx - 1]
-    await sb.from('tasks').update({ parent_task_id: newParent.id }).eq('id', taskId)
+    const { error } = await sb.from('tasks').update({ parent_task_id: newParent.id }).eq('id', taskId)
+    if (error) throw error
     await get().reloadProject()
+    return 'ok'
   },
 
   outdentTask: async (taskId) => {
     const { tasks } = get()
     const task = tasks.find(t => t.id === taskId)
-    if (!task || !task.parent_task_id) return // already root
+    if (!task) return 'not_found'
+    if (!task.parent_task_id) return 'root' // already root
     const parent = tasks.find(t => t.id === task.parent_task_id)
     const grandParentId = parent?.parent_task_id || null
-    await sb.from('tasks').update({ parent_task_id: grandParentId }).eq('id', taskId)
+    const { error } = await sb.from('tasks').update({ parent_task_id: grandParentId }).eq('id', taskId)
+    if (error) throw error
     await get().reloadProject()
+    return 'ok'
   },
 
   linkTasks: async (fromId, toId) => {
