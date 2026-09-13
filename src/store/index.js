@@ -314,35 +314,34 @@ export const useStore = create((set, get) => ({
     await get().reloadProject()
   },
 
-  indentTask: async (taskId) => {
+  indentTask: async (taskId, skipReload = false) => {
     const { tasks } = get()
     const { childrenMap } = buildHierarchy(tasks)
     const task = tasks.find(t => t.id === taskId)
     if (!task) return 'not_found'
 
-    // Find siblings at same level and same parent
     const siblings = (childrenMap[task.parent_task_id || 'ROOT'] || [])
       .sort((a, b) => (a.order_index || 0) - (b.order_index || 0))
     const idx = siblings.findIndex(s => s.id === taskId)
-    if (idx === 0) return 'first' // no previous sibling to nest under
+    if (idx === 0) return 'first'
 
     const newParent = siblings[idx - 1]
     const { error } = await sb.from('tasks').update({ parent_task_id: newParent.id }).eq('id', taskId)
     if (error) throw error
-    await get().reloadProject()
+    if (!skipReload) await get().reloadProject()
     return 'ok'
   },
 
-  outdentTask: async (taskId) => {
+  outdentTask: async (taskId, skipReload = false) => {
     const { tasks } = get()
     const task = tasks.find(t => t.id === taskId)
     if (!task) return 'not_found'
-    if (!task.parent_task_id) return 'root' // already root
+    if (!task.parent_task_id) return 'root'
     const parent = tasks.find(t => t.id === task.parent_task_id)
     const grandParentId = parent?.parent_task_id || null
     const { error } = await sb.from('tasks').update({ parent_task_id: grandParentId }).eq('id', taskId)
     if (error) throw error
-    await get().reloadProject()
+    if (!skipReload) await get().reloadProject()
     return 'ok'
   },
 
