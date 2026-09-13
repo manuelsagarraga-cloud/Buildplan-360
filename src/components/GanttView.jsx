@@ -420,6 +420,40 @@ export function GanttView() {
         </div>
       </div>
 
+      {/* ── Barra de selección rápida ─────────────────────────── */}
+      {activeTab === 'gantt' && editMode && (
+        <div style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)', padding: '4px 24px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ color: 'var(--text-3)', marginRight: 4 }}>Selección:</span>
+          <button className="btn btn-sm" onClick={() => {
+            const all = new Set(visibleTasks.map(t => t.id))
+            setSelectedIds(all)
+          }} title="Seleccionar todas las tareas visibles">☑ Todo</button>
+          <button className="btn btn-sm" onClick={() => setSelectedIds(new Set())} title="Quitar toda la selección">☐ Nada</button>
+          <button className="btn btn-sm" onClick={() => {
+            setSelectedIds(prev => {
+              const next = new Set()
+              visibleTasks.forEach(t => { if (!prev.has(t.id)) next.add(t.id) })
+              return next
+            })
+          }} title="Invertir la selección">⇄ Invertir</button>
+          <span style={{ color: 'var(--border)', margin: '0 2px' }}>│</span>
+          <button className="btn btn-sm" onClick={() => {
+            const desde = prompt('Desde fila número:', '1')
+            const hasta = prompt('Hasta fila número:', String(visibleTasks.length))
+            if (!desde || !hasta) return
+            const d = Math.max(1, parseInt(desde) || 1) - 1
+            const h = Math.min(visibleTasks.length, parseInt(hasta) || visibleTasks.length)
+            const next = new Set(selectedIds)
+            for (let i = d; i < h; i++) next.add(visibleTasks[i].id)
+            setSelectedIds(next)
+            toast(`Seleccionadas filas ${d + 1} a ${h}`)
+          }} title="Seleccionar un rango de filas por número">📏 Rango…</button>
+          {selectedIds.size > 0 && (
+            <span style={{ color: 'var(--text-2)', fontWeight: 600, marginLeft: 4 }}>{selectedIds.size} seleccionada(s)</span>
+          )}
+        </div>
+      )}
+
       {/* ── Barra de acciones masivas ─────────────────────────── */}
       {selectedIds.size > 0 && (
         <div style={{ background: 'var(--info-bg)', borderBottom: '1px solid var(--border)', padding: '8px 24px', fontSize: 13, color: 'var(--info)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
